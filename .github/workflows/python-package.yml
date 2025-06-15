@@ -1,4 +1,4 @@
-name: Build Windows Executable
+name: Build Windows Executable with .venv
 
 on:
   push:
@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
 
     steps:
     - uses: actions/checkout@v4
@@ -22,20 +22,16 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Install dependencies
+    - name: Create and activate venv, install dependencies
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install pyinstaller
-        if (Test-Path requirements.txt) { pip install -r requirements.txt }
+        python -m venv .venv
+        .venv\Scripts\python.exe -m pip install --upgrade pip
+        .venv\Scripts\python.exe -m pip install pyinstaller
+        if (Test-Path requirements.txt) { .venv\Scripts\pip.exe install -r requirements.txt }
 
-    - name: Build with PyInstaller
+    - name: Build with PyInstaller in .venv
       run: |
-        # 检查 akshare 路径（可根据实际情况调整）
-        $aksharePath = ".venv\Lib\site-packages\akshare"
-        if (!(Test-Path $aksharePath)) {
-          $aksharePath = "Lib\site-packages\akshare"
-        }
-        pyinstaller --onefile --add-data "$aksharePath;akshare" --noconsole --icon=logo.ico main.py
+        .venv\Scripts\pyinstaller.exe --onefile --add-data ".venv\Lib\site-packages\akshare;akshare" --noconsole --icon=logo.ico main.py
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
