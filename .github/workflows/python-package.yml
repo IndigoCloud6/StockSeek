@@ -1,0 +1,67 @@
+name: Build and Release Windows Executable
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Create and activate venv, install dependencies
+      run: |
+        python -m venv .venv
+        .venv\Scripts\python.exe -m pip install --upgrade pip
+        .venv\Scripts\python.exe -m pip install pyinstaller
+        if (Test-Path requirements.txt) { .venv\Scripts\pip.exe install -r requirements.txt }
+
+    - name: Build with PyInstaller in .venv
+      run: |
+        .venv\Scripts\pyinstaller.exe --onefile --add-data ".venv\Lib\site-packages\akshare;akshare" --noconsole --icon=logo.ico main.py
+
+    - name: Prepare release folder
+      run: |
+        New-Item -ItemType Directory -Force -Path release
+        Copy-Item -Path dist\*.exe -Destination release\
+        Copy-Item -Path logo.ico -Destination release\
+        Copy-Item -Path announcement_config.json -Destination release\
+
+    - name: Zip release folder
+      run: |
+        Compress-Archive -Path release\* -DestinationPath MoneySeek-${{ matrix.python-version }}.zip
+
+    - name: Upload zip artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: MoneySeek-${{ matrix.python-version }}.zip
+        path: MoneySeek-${{ matrix.python-version }}.zip
+
+    - name: Release (auto-create or update latest)
+      uses: softprops/action-gh-release@v2
+      if: github.ref == 'refs/heads/main'
+      with:
+        tag_name: latest
+        name: Latest Build
+        body: |
+          自动发布的最新主分支 Windows 可执行包（含 exe, logo.ico, announcement_config.json）
+        files: |
+          MoneySeek-${{ matrix.python-version }}.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
