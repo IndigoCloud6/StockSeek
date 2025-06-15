@@ -5,10 +5,9 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-  # 如只想发布 tag，改为如下
-  # push:
-  #   tags:
-  #     - 'v*'
+
+permissions:
+  contents: write
 
 jobs:
   build:
