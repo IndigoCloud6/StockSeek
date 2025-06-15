@@ -1,6 +1,6 @@
 # StockSeek
 
-MoneySeek 是一个基于 Python 的股票交易数据可视化系统，支持多市场股票数据的自动获取、实时展示、个性化设置与分析。系统集成公告栏、筛选排序、字段定制、数据导出等丰富功能，适合个人投资者与数据分析爱好者使用。
+StockSeek 是一个基于 Python 的股票交易数据可视化系统，支持多市场股票数据的自动获取、实时展示、个性化设置与分析。系统集成公告栏、筛选排序、字段定制、数据导出等丰富功能，适合个人投资者与数据分析爱好者使用。
 
 ## 主要特性
 
@@ -31,8 +31,8 @@ pip install akshare pandas openpyxl
 
 1. 克隆本项目到本地：
     ```bash
-    git clone https://github.com/IndigoCloud6/MoneySeek.git
-    cd MoneySeek
+    git clone https://github.com/IndigoCloud6/StockSeek.git
+    cd StockSeek
     ```
 
 2. 运行主程序：
