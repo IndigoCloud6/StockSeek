@@ -341,7 +341,18 @@ class StockVisualizationApp:
             # 连接数据库
             conn = sqlite3.connect('stock_data.db')
             table_name = f'stock_changes_{current_date}'
-            conn.execute("DELETE FROM " + table_name)
+
+            try:
+                conn.execute(f"DELETE FROM {table_name}")
+                print("删除成功")
+            except sqlite3.OperationalError as e:
+                if "no such table" in str(e):  # SQLite 错误信息
+                    print(f"警告：表 {table_name} 不存在")
+                else:
+                    raise  # 重新抛出其他异常
+            except Exception as e:
+                print(f"未知错误: {e}")
+
             stock_changes_em_df.to_sql(table_name, conn, if_exists='append', index=False)
             logging.info(f"数据已成功存入 SQLite 数据库表 {table_name}！")
 
@@ -368,7 +379,19 @@ class StockVisualizationApp:
 
             stock_real_data_df = pd.DataFrame(real_data_list)
             real_table_name = f'stock_real_data_{current_date}'
-            conn.execute("DELETE FROM " + real_table_name)
+
+            try:
+                conn.execute(f"DELETE FROM {real_table_name}")
+                print("删除成功")
+            except sqlite3.OperationalError as e:
+                if "no such table" in str(e):  # SQLite 错误信息
+                    print(f"警告：表 {real_table_name} 不存在")
+                else:
+                    raise  # 重新抛出其他异常
+            except Exception as e:
+                print(f"未知错误: {e}")
+
+
             stock_real_data_df.to_sql(real_table_name, conn, if_exists='replace', index=False)
             logging.info(f"实时数据已成功存入 SQLite 数据库表 {real_table_name}！")
             conn.close()
