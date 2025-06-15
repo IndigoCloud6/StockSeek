@@ -1,10 +1,14 @@
-name: Build Windows Executable with .venv
+name: Build and Release Windows Executable
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  # 如只想发布 tag，改为如下
+  # push:
+  #   tags:
+  #     - 'v*'
 
 jobs:
   build:
@@ -12,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.12"]
 
     steps:
     - uses: actions/checkout@v4
@@ -38,3 +42,16 @@ jobs:
       with:
         name: MoneySeek-${{ matrix.python-version }}
         path: dist/
+
+    - name: Release (auto-create or update latest)
+      uses: softprops/action-gh-release@v2
+      if: github.ref == 'refs/heads/main'
+      with:
+        tag_name: latest
+        name: Latest Build
+        body: |
+          自动发布的最新主分支 Windows 可执行文件（每次 main push/PR 更新）
+        files: |
+          dist/*.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
