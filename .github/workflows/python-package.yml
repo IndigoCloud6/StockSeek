@@ -45,13 +45,13 @@ jobs:
 
     - name: Zip release folder
       run: |
-        Compress-Archive -Path release\* -DestinationPath MoneySeek-${{ matrix.python-version }}.zip
+        Compress-Archive -Path release\* -DestinationPath StockSeek-${{ matrix.python-version }}.zip
 
     - name: Upload zip artifact
       uses: actions/upload-artifact@v4
       with:
-        name: MoneySeek-${{ matrix.python-version }}.zip
-        path: MoneySeek-${{ matrix.python-version }}.zip
+        name: StockSeek-${{ matrix.python-version }}.zip
+        path: StockSeek-${{ matrix.python-version }}.zip
 
     - name: Release (auto-create or update latest)
       uses: softprops/action-gh-release@v2
@@ -62,6 +62,6 @@ jobs:
         body: |
           自动发布的最新主分支 Windows 可执行包（含 exe, logo.ico, announcement_config.json）
         files: |
-          MoneySeek-${{ matrix.python-version }}.zip
+          StockSeek-${{ matrix.python-version }}.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
