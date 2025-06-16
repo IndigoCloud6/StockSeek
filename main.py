@@ -33,11 +33,13 @@ if not os.path.exists(CONFIG_FILE):
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump({"announcements": DEFAULT_ANNOUNCEMENTS}, f, ensure_ascii=False, indent=4)
 
+
 # Function to save results to Excel
 def save_to_excel(results: list, filename: str = "stock_data.xlsx"):
     df = pd.DataFrame(results)
     df.to_excel(filename, index=False, engine='openpyxl')
     print(f"Data saved to {filename}")
+
 
 def get_stock_info(stock_code):
     if not isinstance(stock_code, str) or not stock_code.isdigit():
@@ -72,6 +74,7 @@ def get_stock_info(stock_code):
     else:
         return ('unknown', '其他板块')
 
+
 class StockVisualizationApp:
     def __init__(self, master):
         self.master = master
@@ -80,7 +83,7 @@ class StockVisualizationApp:
 
         self.announcements = self.load_announcements()
         self.current_announcement_idx = 0
-        self.display_columns = ["代码", "名称", "交易所", "行业", "最新", "涨幅", "今开", "最高", "最低", "总成交金额"]
+        self.display_columns = ["代码", "名称", "交易所", "行业", "总市值", "最新", "涨幅", "今开", "最高", "最低", "总成交金额"]
 
         self.bold_font = Font(weight="bold")
         self.normal_font = Font(weight="normal")
@@ -295,9 +298,11 @@ class StockVisualizationApp:
             logging.info(f"数据已成功存入 SQLite 数据库表 {table_name}！")
             real_data_list = []
             stock_info = stock_changes_em_df[['代码', '名称']].drop_duplicates(subset=['代码'])
+
             def not_bj_kcb(row):
                 exchange, market = get_stock_info(row['代码'])
                 return not (exchange == 'bj' or market == '科创板' or market == '创业板')
+
             filtered_stock_info = stock_info[stock_info.apply(not_bj_kcb, axis=1)]
             max_workers = min(10, len(filtered_stock_info))
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -333,9 +338,11 @@ class StockVisualizationApp:
         try:
             stock_info_df = ak.stock_individual_info_em(symbol=stock_code)
             industry = stock_info_df[stock_info_df['item'] == '行业']['value'].iloc[0] if '行业' in stock_info_df['item'].values else '未知'
+            market_cap = stock_info_df[stock_info_df['item'] == '总市值']['value'].iloc[0] if '总市值' in stock_info_df['item'].values else '未知'
             stock_bid_ask_df = ak.stock_bid_ask_em(symbol=stock_code)
             latest_price = float(stock_bid_ask_df[stock_bid_ask_df['item'] == '最新']['value'].iloc[0]) if '最新' in stock_bid_ask_df['item'].values else None
-            price_change_percent = float(stock_bid_ask_df[stock_bid_ask_df['item'] == '涨幅']['value'].iloc[0]) if '涨幅' in stock_bid_ask_df['item'].values else None
+            price_change_percent = float(stock_bid_ask_df[stock_bid_ask_df['item'] == '涨幅']['value'].iloc[0]) if '涨幅' in stock_bid_ask_df[
+                'item'].values else None
             opening_price = float(stock_bid_ask_df[stock_bid_ask_df['item'] == '今开']['value'].iloc[0]) if '今开' in stock_bid_ask_df['item'].values else None
             max_price = float(stock_bid_ask_df[stock_bid_ask_df['item'] == '最高']['value'].iloc[0]) if '最高' in stock_bid_ask_df['item'].values else None
             min_price = float(stock_bid_ask_df[stock_bid_ask_df['item'] == '最低']['value'].iloc[0]) if '最低' in stock_bid_ask_df['item'].values else None
@@ -347,6 +354,7 @@ class StockVisualizationApp:
                 '交易所': exchange,
                 '市场板块': market,
                 '行业': industry,
+                '总市值': int(market_cap / 100000000),
                 '最新': latest_price,
                 '涨幅': price_change_percent,
                 '最高': max_price,
@@ -388,6 +396,35 @@ class StockVisualizationApp:
             width=3,
             command=lambda: self.adjust_amount(200)
         ).pack(side=tk.LEFT, padx=2)
+
+        # 总市值过滤
+        market_cap_frame = ttk.Frame(control_frame)
+        market_cap_frame.pack(side=tk.LEFT, padx=5)
+        ttk.Label(market_cap_frame, text="最小总市值(亿):").pack(side=tk.LEFT, padx=5)
+        ttk.Button(
+            market_cap_frame,
+            text="-",
+            width=3,
+            command=lambda: self.adjust_market_cap(-10)
+        ).pack(side=tk.LEFT, padx=2)
+        self.market_cap_var = tk.StringVar(value="10")
+        self.market_cap_label = ttk.Label(
+            market_cap_frame,
+            textvariable=self.market_cap_var,
+            width=6,
+            anchor="center",
+            background="white",
+            relief="sunken",
+            padding=3
+        )
+        self.market_cap_label.pack(side=tk.LEFT, padx=2)
+        ttk.Button(
+            market_cap_frame,
+            text="+",
+            width=3,
+            command=lambda: self.adjust_market_cap(10)
+        ).pack(side=tk.LEFT, padx=2)
+
         ttk.Label(control_frame, text="排序方式:").pack(side=tk.LEFT, padx=5)
         self.sort_var = tk.StringVar(value="总成交金额")
         sort_options = ["总成交金额", "涨幅", "总成笔数"]
@@ -406,13 +443,23 @@ class StockVisualizationApp:
             self.amount_var.set("2000")
             self.load_data()
 
+    def adjust_market_cap(self, delta):
+        try:
+            current = int(self.market_cap_var.get())
+            new_value = max(0, current + delta)
+            self.market_cap_var.set(str(new_value))
+            self.load_data()
+        except ValueError:
+            self.market_cap_var.set("100")
+            self.load_data()
+
     def select_columns(self):
         select_window = tk.Toplevel(self.master)
         select_window.title("选择显示字段")
         self.center_window(select_window, 300, 400)
         all_columns = [
-            "代码", "名称", "交易所", "市场板块",
-            "今开", "涨幅", "最低", "最高", "涨停",
+            "代码", "名称", "交易所", "市场板块", "总市值",
+            "今开", "涨幅", "最新", "最低", "最高", "涨停",
             "总成笔数", "总成交金额", "时间金额明细"
         ]
         self.column_vars = {}
@@ -455,6 +502,8 @@ class StockVisualizationApp:
         self.context_menu.add_command(label="K线图", command=self.show_k_line)
         self.context_menu.add_separator()
         self.context_menu.add_command(label="复制股票代码", command=self.copy_stock_code)
+        self.context_menu.add_command(label="复制股票名称", command=self.copy_stock_name)
+        self.context_menu.add_command(label="AI诊股", command=self.show_fundamental)
 
     def on_right_click(self, event):
         item = self.tree.identify_row(event.y)
@@ -500,12 +549,23 @@ class StockVisualizationApp:
             self.master.clipboard_append(self.selected_stock["code"])
             self.status_label.config(text=f"已复制股票代码: {self.selected_stock['code']}")
 
+    def copy_stock_name(self):
+        if self.selected_stock["name"]:
+            self.master.clipboard_clear()
+            self.master.clipboard_append(self.selected_stock["name"])
+            self.status_label.config(text=f"已复制股票名称: {self.selected_stock['name']}")
+
     def load_data(self):
         try:
             min_amount = int(self.amount_var.get())
         except ValueError:
             min_amount = 2000
             self.amount_var.set("2000")
+        try:
+            min_market_cap = int(self.market_cap_var.get())
+        except ValueError:
+            min_market_cap = 10
+            self.market_cap_var.set("10")
         sort_by = self.sort_var.get()
         current_date = datetime.now().strftime('%Y%m%d')
         conn = sqlite3.connect('stock_data.db')
@@ -515,6 +575,7 @@ class StockVisualizationApp:
             a.名称,
             b.交易所,
             b.行业,
+            b.总市值,
             b.市场板块,
             b.今开,
             b.最新,
@@ -530,6 +591,7 @@ class StockVisualizationApp:
             stock_real_data_{current_date} b
         WHERE 
             a.代码 = b.代码
+            AND b.总市值 >= {min_market_cap}
         GROUP BY 
             a.代码,
             a.名称
@@ -551,7 +613,7 @@ class StockVisualizationApp:
         columns = list(self.df.columns)
         self.tree["columns"] = columns
         col_widths = {
-            "代码": 120, "名称": 120, "交易所": 60, "市场板块": 80,
+            "代码": 120, "名称": 120, "交易所": 60, "市场板块": 80, "总市值": 80,
             "今开": 70, "涨幅": 70, "最低": 70, "最高": 70, "涨停": 70,
             "总成笔数": 80, "总成交金额": 100, "时间金额明细": 200
         }
@@ -608,6 +670,7 @@ class StockVisualizationApp:
             except (ValueError, IndexError):
                 pass
         text.config(state=tk.DISABLED)
+
 
 if __name__ == "__main__":
     root = tk.Tk()
