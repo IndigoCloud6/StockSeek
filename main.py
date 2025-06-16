@@ -95,7 +95,7 @@ def get_stock_info(stock_code):
 class StockVisualizationApp:
     def __init__(self, master):
         self.master = master
-        master.title("股票交易数据可视化系统")
+        master.title("草船借箭")
         self.center_window(master, 1200, 650)
 
         self.announcements = self.load_announcements()
