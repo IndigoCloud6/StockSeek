@@ -12,26 +12,43 @@ from tkinter.font import Font
 
 import akshare as ak
 import pandas as pd
+from openai import OpenAI
 
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 配置文件路径
-CONFIG_FILE = "announcement_config.json"
+CONFIG_FILE = "config.json"
 
 # 默认公告内容
 DEFAULT_ANNOUNCEMENTS = [
-    "系统公告：欢迎使用股票交易数据可视化系统！",
-    "重要提示：系统数据每10分钟自动更新一次，请及时刷新查看最新数据。",
-    "操作提示：右键点击股票行可查看基本面分析和K线图。",
-    "温馨提示：双击股票行可查看详细交易信息。",
     "系统公告：所有数据来源于公开市场信息，仅供参考，不构成投资建议。"
 ]
+
+DEFAULT_API_KEY = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # 可选：不建议在代码中留密钥
 
 # 创建配置文件（如果不存在）
 if not os.path.exists(CONFIG_FILE):
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-        json.dump({"announcements": DEFAULT_ANNOUNCEMENTS}, f, ensure_ascii=False, indent=4)
+        json.dump({"announcements": DEFAULT_ANNOUNCEMENTS, "api_key": DEFAULT_API_KEY}, f, ensure_ascii=False, indent=4)
+
+
+# 加载API KEY
+def load_api_key():
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+            api_key = config.get("api_key")
+            if not api_key or api_key.startswith("sk-xxxx"):
+                logging.error("请在config.json中配置有效的api_key")
+            return api_key
+    except Exception as e:
+        logging.error(f"读取API Key失败: {e}")
+        raise
+
+
+api_key = load_api_key()
+client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
 
 
 # Function to save results to Excel
@@ -180,7 +197,7 @@ class StockVisualizationApp:
     def configure_announcements(self):
         config_window = tk.Toplevel(self.master)
         config_window.title("公告配置")
-        self.center_window(config_window, 600, 700)
+        self.center_window(config_window, 600, 800)
         config_window.resizable(True, True)
 
         # 外层frame，确保按钮不会被内容挤出窗口
@@ -230,6 +247,52 @@ class StockVisualizationApp:
         ).pack(side=tk.RIGHT, padx=5)
 
         self.load_announcements_to_text()
+
+    def show_ai_diagnose(self):
+        if not self.selected_stock["code"]:
+            messagebox.showwarning("提示", "请先选择一只股票")
+            return
+
+        stock_code = self.selected_stock["code"]
+        stock_name = self.selected_stock["name"]
+
+        dialog = tk.Toplevel(self.master)
+        dialog.title(f"AI诊股: {stock_name}({stock_code})")
+        self.center_window(dialog, 600, 400)
+        text_widget = tk.Text(dialog, wrap=tk.WORD, state=tk.NORMAL)
+        text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        font_bold_large = ("Microsoft YaHei", 14, "bold")
+        text_widget.configure(font=font_bold_large)
+        text_widget.insert(tk.END, "正在咨询AI诊股，请稍候...\n")
+        text_widget.config(state=tk.DISABLED)
+
+        def stream_gpt_response():
+            prompt = f"请用中文分析股票 {stock_name}({stock_code}) 的投资价值、风险、行业地位和未来走势。"
+            try:
+                stream = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": prompt}],
+                    stream=True,
+                    extra_body={
+                        "web_search": True  # 启用联网功能
+                    }
+                )
+                text_widget.config(state=tk.NORMAL)
+                text_widget.delete(1.0, tk.END)
+
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        text_widget.insert(tk.END, content)
+                        text_widget.see(tk.END)
+                        text_widget.update()
+                text_widget.config(state=tk.DISABLED)
+            except Exception as e:
+                text_widget.config(state=tk.NORMAL)
+                text_widget.insert(tk.END, f"\n[AI诊股失败]: {e}")
+                text_widget.config(state=tk.DISABLED)
+
+        threading.Thread(target=stream_gpt_response, daemon=True).start()
 
     def load_announcements_to_text(self):
         try:
@@ -456,7 +519,7 @@ class StockVisualizationApp:
     def select_columns(self):
         select_window = tk.Toplevel(self.master)
         select_window.title("选择显示字段")
-        self.center_window(select_window, 300, 400)
+        self.center_window(select_window, 300, 600)
         all_columns = [
             "代码", "名称", "交易所", "市场板块", "总市值",
             "今开", "涨幅", "最新", "最低", "最高", "涨停",
@@ -503,7 +566,7 @@ class StockVisualizationApp:
         self.context_menu.add_separator()
         self.context_menu.add_command(label="复制股票代码", command=self.copy_stock_code)
         self.context_menu.add_command(label="复制股票名称", command=self.copy_stock_name)
-        self.context_menu.add_command(label="AI诊股", command=self.show_fundamental)
+        self.context_menu.add_command(label="AI诊股", command=self.show_ai_diagnose)
 
     def on_right_click(self, event):
         item = self.tree.identify_row(event.y)
