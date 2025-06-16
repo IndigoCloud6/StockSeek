@@ -9,13 +9,17 @@ from datetime import datetime
 from tkinter import messagebox
 from tkinter import ttk
 from tkinter.font import Font
-
+import mplfinance as mpf
+import matplotlib
 import akshare as ak
 import pandas as pd
 from openai import OpenAI
 
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+matplotlib.rcParams['font.family'] = 'Microsoft YaHei'
+matplotlib.rcParams['axes.unicode_minus'] = False
 
 # 配置文件路径
 CONFIG_FILE = "config.json"
@@ -595,16 +599,215 @@ class StockVisualizationApp:
             )
 
     def show_k_line(self):
-        if self.selected_stock["code"]:
-            messagebox.showinfo(
-                "K线图",
-                f"正在显示 {self.selected_stock['name']}({self.selected_stock['code']}) 的K线图...\n\n"
-                "功能实现中，这里可以展示:\n"
-                "- 日K/周K/月K\n"
-                "- 技术指标(MACD, KDJ, RSI等)\n"
-                "- 成交量\n"
-                "- 画线工具\n"
-            )
+        if not self.selected_stock["code"]:
+            messagebox.showwarning("提示", "请先选择一只股票")
+            return
+
+        stock_code = self.selected_stock["code"]
+        stock_name = self.selected_stock["name"]
+
+        def fetch_and_show():
+            try:
+                import akshare as ak
+                import mplfinance as mpf
+                import pandas as pd
+                from datetime import datetime, timedelta
+                import matplotlib.pyplot as plt
+
+                # 设置微软雅黑字体
+                plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']
+                plt.rcParams['axes.unicode_minus'] = False
+
+                # 获取交易日期逻辑
+                now = datetime.now()
+                current_time = now.time()
+                market_open_time = datetime.strptime("09:30", "%H:%M").time()
+
+                # 如果当前时间早于9:30，使用前一天的日期
+                if current_time < market_open_time:
+                    target_date = now - timedelta(days=1)
+                else:
+                    target_date = now
+
+                # 进一步处理周末情况
+                while target_date.weekday() > 4:  # 0-6代表周一到周日
+                    target_date = target_date - timedelta(days=1)
+
+                today = target_date.strftime('%Y%m%d')
+
+                print(f"使用交易日期: {today}")
+
+                # 获取股票1分钟K线数据
+                stock_data = ak.stock_zh_a_hist_min_em(
+                    symbol=stock_code,
+                    period="1",
+                    start_date=f"{today} 09:00:00",
+                    end_date=f"{today} 15:00:00",
+                    adjust="qfq"
+                )
+
+                if stock_data.empty:
+                    messagebox.showwarning("提示", f"未获取到{stock_name}({stock_code})的数据，可能是非交易日或数据源问题")
+                    return
+
+                print(f"{stock_name}({stock_code})原始数据预览：")
+                print(stock_data.head())
+
+                # 数据预处理
+                stock_data_processed = stock_data.rename(columns={
+                    '时间': 'Date',
+                    '开盘': 'Open',
+                    '最高': 'High',
+                    '最低': 'Low',
+                    '收盘': 'Close',
+                    '成交量': 'Volume'
+                })
+
+                # 转换时间格式并设置为索引
+                stock_data_processed['Date'] = pd.to_datetime(stock_data_processed['Date'])
+                stock_data_processed.set_index('Date', inplace=True)
+
+                # 确保数据类型正确
+                for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                    stock_data_processed[col] = pd.to_numeric(stock_data_processed[col], errors='coerce')
+
+                # 计算技术指标
+                # 移动平均线
+                stock_data_processed['MA5'] = stock_data_processed['Close'].rolling(window=5).mean()
+                stock_data_processed['MA10'] = stock_data_processed['Close'].rolling(window=10).mean()
+                stock_data_processed['MA20'] = stock_data_processed['Close'].rolling(window=20).mean()
+
+                # 布林带
+                stock_data_processed['BB_middle'] = stock_data_processed['Close'].rolling(window=20).mean()
+                stock_data_processed['BB_std'] = stock_data_processed['Close'].rolling(window=20).std()
+                stock_data_processed['BB_upper'] = stock_data_processed['BB_middle'] + 2 * stock_data_processed['BB_std']
+                stock_data_processed['BB_lower'] = stock_data_processed['BB_middle'] - 2 * stock_data_processed['BB_std']
+
+                # RSI 相对强弱指标
+                def calculate_rsi(data, window=14):
+                    delta = data.diff()
+                    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+                    rs = gain / loss
+                    rsi = 100 - (100 / (1 + rs))
+                    return rsi
+
+                stock_data_processed['RSI'] = calculate_rsi(stock_data_processed['Close'])
+
+                # 创建自定义颜色样式（中国习惯：红涨绿跌）
+                mc = mpf.make_marketcolors(
+                    up='red',
+                    down='green',
+                    edge='inherit',
+                    wick={'up': 'red', 'down': 'green'},
+                    volume='in',
+                )
+
+                # 创建图表样式
+                style = mpf.make_mpf_style(
+                    marketcolors=mc,
+                    gridstyle='-',
+                    gridcolor='lightgray',
+                    facecolor='white',
+                    figcolor='white',
+                    rc={'font.family': 'Microsoft YaHei'}  # 支持中文显示
+                )
+
+                # 准备附加图表（技术指标）
+                apds = [
+                    # 移动平均线
+                    mpf.make_addplot(stock_data_processed['MA5'], color='blue', width=1.5),
+                    mpf.make_addplot(stock_data_processed['MA10'], color='purple', width=1.5),
+                    mpf.make_addplot(stock_data_processed['MA20'], color='orange', width=1.5),
+
+                    # 布林带
+                    mpf.make_addplot(stock_data_processed['BB_upper'], color='gray', width=1, alpha=0.7),
+                    mpf.make_addplot(stock_data_processed['BB_lower'], color='gray', width=1, alpha=0.7),
+
+                    # RSI (在第3个子图中显示)
+                    mpf.make_addplot(stock_data_processed['RSI'], panel=2, color='purple', width=1.5),
+                    mpf.make_addplot([70] * len(stock_data_processed), panel=2, color='red', width=0.8, linestyle='--', alpha=0.7),
+                    mpf.make_addplot([30] * len(stock_data_processed), panel=2, color='green', width=0.8, linestyle='--', alpha=0.7),
+                ]
+
+                # 格式化日期用于显示
+                display_date = target_date.strftime('%Y-%m-%d')
+
+                # 绘制高级K线图（不设置title，稍后手动添加到底部）
+                fig, axes = mpf.plot(
+                    stock_data_processed,
+                    type='candle',  # 蜡烛图类型
+                    style=style,  # 应用自定义样式
+                    volume=True,  # 显示成交量
+                    addplot=apds,  # 添加技术指标
+                    # title=None,  # 不在这里设置标题
+                    ylabel='价格 (元)',
+                    ylabel_lower='成交量',
+                    figsize=(12, 8),  # 图形大小
+                    panel_ratios=(3, 1, 1),  # 主图:成交量:RSI的比例 = 3:1:1
+                    tight_layout=True,  # 紧凑布局
+                    show_nontrading=False,  # 不显示非交易时间
+                    returnfig=True  # 返回图形对象以便添加图例和标题
+                )
+
+                # 手动添加图例到主图右下角
+                main_ax = axes[0]  # 主图轴
+
+                # 创建图例条目
+                legend_elements = [
+                    plt.Line2D([0], [0], color='blue', lw=1.5, label='MA5'),
+                    plt.Line2D([0], [0], color='purple', lw=1.5, label='MA10'),
+                    plt.Line2D([0], [0], color='orange', lw=1.5, label='MA20'),
+                    plt.Line2D([0], [0], color='gray', lw=1, alpha=0.7, label='布林带'),
+                ]
+
+                # 添加图例到右下角
+                main_ax.legend(handles=legend_elements, loc='lower right', frameon=True,
+                               fancybox=True, shadow=True, framealpha=0.9, fontsize=10)
+
+                # 为RSI子图也添加图例到右下角
+                if len(axes) > 2:  # 确保RSI子图存在
+                    rsi_ax = axes[2]  # RSI子图轴
+                    rsi_legend_elements = [
+                        plt.Line2D([0], [0], color='purple', lw=1.5, label='RSI'),
+                        plt.Line2D([0], [0], color='red', lw=0.8, linestyle='--', alpha=0.7, label='超买(70)'),
+                        plt.Line2D([0], [0], color='green', lw=0.8, linestyle='--', alpha=0.7, label='超卖(30)'),
+                    ]
+                    rsi_ax.legend(handles=rsi_legend_elements, loc='lower right', frameon=True,
+                                  fancybox=True, shadow=True, framealpha=0.9, fontsize=9)
+
+                # 在图表底部添加标题
+                fig.suptitle(f'{stock_name}({stock_code}) - {display_date} 高级技术分析K线图',
+                             fontsize=14, fontweight='bold', y=0.02)  # y=0.02 表示距离底部2%的位置
+
+                # 调整布局，为底部标题留出空间
+                plt.tight_layout()
+                plt.subplots_adjust(bottom=0.08)  # 为底部标题留出更多空间
+
+                # 显示图形
+                plt.show()
+                print(f"{stock_name}({stock_code}){display_date}高级K线图已显示在窗口中")
+
+                # 打印一些技术指标的当前值
+                if not stock_data_processed.empty:
+                    latest_data = stock_data_processed.iloc[-1]
+                    print(f"\n{stock_name}({stock_code}){display_date}最新技术指标值：")
+                    print(f"收盘价: {latest_data['Close']:.2f}")
+                    print(f"MA5: {latest_data['MA5']:.2f}")
+                    print(f"MA10: {latest_data['MA10']:.2f}")
+                    print(f"MA20: {latest_data['MA20']:.2f}")
+                    print(f"RSI: {latest_data['RSI']:.2f}")
+                    print(f"布林带上轨: {latest_data['BB_upper']:.2f}")
+                    print(f"布林带下轨: {latest_data['BB_lower']:.2f}")
+
+            except ImportError as e:
+                messagebox.showerror("错误", f"缺少必要的库，请安装：pip install akshare mplfinance pandas matplotlib\n错误详情：{str(e)}")
+            except Exception as e:
+                messagebox.showerror("错误", f"显示K线图时发生错误：{str(e)}")
+                print(f"K线图显示错误详情：{e}")
+
+        # 在新线程中执行，避免阻塞UI
+        threading.Thread(target=fetch_and_show, daemon=True).start()
 
     def copy_stock_code(self):
         if self.selected_stock["code"]:
