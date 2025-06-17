@@ -137,21 +137,21 @@ class KLineWindow:
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # 创建状态框架
-        status_frame = ttk.Frame(main_frame)
-        status_frame.pack(fill=tk.X, pady=(0, 10))
+        # status_frame = ttk.Frame(main_frame)
+        # status_frame.pack(fill=tk.X, pady=(0, 10))
 
         # 加载提示
-        self.loading_label = ttk.Label(
-            status_frame,
-            text=f"正在加载 {self.stock_name}({self.stock_code}) 的K线数据...",
-            font=('Microsoft YaHei', 12)
-        )
-        self.loading_label.pack(side=tk.LEFT)
+        # self.loading_label = ttk.Label(
+        #     status_frame,
+        #     text=f"正在加载 {self.stock_name}({self.stock_code}) 的K线数据...",
+        #     font=('Microsoft YaHei', 12)
+        # )
+        # self.loading_label.pack(side=tk.LEFT)
 
         # 进度指示器
-        self.progress = ttk.Progressbar(status_frame, mode='indeterminate')
-        self.progress.pack(side=tk.RIGHT, padx=(10, 0))
-        self.progress.start()
+        # self.progress = ttk.Progressbar(status_frame, mode='indeterminate')
+        # self.progress.pack(side=tk.RIGHT, padx=(10, 0))
+        # self.progress.start()
 
         # 图表容器
         self.chart_frame = ttk.Frame(main_frame)
@@ -283,8 +283,8 @@ class KLineWindow:
         """显示K线图"""
         try:
             # 停止进度条
-            self.progress.stop()
-            self.loading_label.config(text=f"正在绘制 {self.stock_name}({self.stock_code}) 的K线图...")
+            # self.progress.stop()
+            # self.loading_label.config(text=f"正在绘制 {self.stock_name}({self.stock_code}) 的K线图...")
 
             # 创建自定义颜色样式（中国习惯：红涨绿跌）
             mc = mpf.make_marketcolors(
@@ -378,7 +378,7 @@ class KLineWindow:
             toolbar.update()
 
             # 隐藏加载提示
-            self.loading_label.config(text=f"{self.stock_name}({self.stock_code}) K线图加载完成")
+            # self.loading_label.config(text=f"{self.stock_name}({self.stock_code}) K线图加载完成")
 
             # 打印技术指标
             if not stock_data_processed.empty:
@@ -884,7 +884,7 @@ class StockVisualizationApp:
     def create_data_table(self):
         self.table_frame = ttk.Frame(self.main_frame)
         self.table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        ttk.Label(self.table_frame, text="股票交易明细", font=('Microsoft YaHei', 12, 'bold')).pack(anchor=tk.W)
+        ttk.Label(self.table_frame, text="交易明细", font=('Microsoft YaHei', 12, 'bold')).pack(anchor=tk.W)
         self.tree_container = ttk.Frame(self.table_frame)
         self.tree_container.pack(fill=tk.BOTH, expand=True)
 
@@ -918,10 +918,10 @@ class StockVisualizationApp:
         self.context_menu = tk.Menu(self.master, tearoff=0)
         self.context_menu.add_command(label="基本面分析", command=self.show_fundamental)
         self.context_menu.add_command(label="K线图", command=self.show_k_line)
+        self.context_menu.add_command(label="AI诊股", command=self.show_ai_diagnose)
         self.context_menu.add_separator()
         self.context_menu.add_command(label="复制股票代码", command=self.copy_stock_code)
         self.context_menu.add_command(label="复制股票名称", command=self.copy_stock_name)
-        self.context_menu.add_command(label="AI诊股", command=self.show_ai_diagnose)
 
         # 初始化动画相关变量
         self.animation_angle = 0
