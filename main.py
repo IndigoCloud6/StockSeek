@@ -1,23 +1,24 @@
 import json
 import logging
 import os
+import queue
 import sqlite3
 import threading
 import tkinter as tk
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from tkinter import messagebox
 from tkinter import ttk
 from tkinter.font import Font
-import mplfinance as mpf
-import matplotlib
+
 import akshare as ak
-import pandas as pd
-from openai import OpenAI
+import matplotlib
 import matplotlib.pyplot as plt
+import mplfinance as mpf
+import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-import queue
-import uuid
+from openai import OpenAI
 
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -359,9 +360,9 @@ class KLineWindow:
                 rsi_ax.legend(handles=rsi_legend_elements, loc='lower right', frameon=True,
                               fancybox=True, shadow=True, framealpha=0.9, fontsize=9)
 
-            # 设置标题
-            fig.suptitle(f'{self.stock_name}({self.stock_code}) - {display_date} 高级技术分析K线图',
-                         fontsize=14, fontweight='bold')
+            # 在图表底部添加标题
+            fig.suptitle(f'{self.stock_name}({self.stock_code}) - {display_date} K线图',
+                         fontsize=14, fontweight='bold', y=0.02)
 
             # 清空图表容器
             for widget in self.chart_frame.winfo_children():
