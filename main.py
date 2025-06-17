@@ -12,19 +12,8 @@ from tkinter import messagebox
 from tkinter import ttk
 from tkinter.font import Font
 
-import akshare as ak
-import matplotlib
-import matplotlib.pyplot as plt
-import mplfinance as mpf
-import pandas as pd
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-from openai import OpenAI
-
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-matplotlib.rcParams['font.family'] = 'Microsoft YaHei'
-matplotlib.rcParams['axes.unicode_minus'] = False
 
 # 配置文件路径
 CONFIG_FILE = "config.json"
@@ -34,12 +23,73 @@ DEFAULT_ANNOUNCEMENTS = [
     "系统公告：所有数据来源于公开市场信息，仅供参考，不构成投资建议。"
 ]
 
-DEFAULT_API_KEY = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # 可选：不建议在代码中留密钥
+DEFAULT_API_KEY = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# 全局变量，延迟初始化
+ak = None
+matplotlib = None
+plt = None
+mpf = None
+pd = None
+FigureCanvasTkAgg = None
+NavigationToolbar2Tk = None
+client = None
+
 
 # 创建配置文件（如果不存在）
-if not os.path.exists(CONFIG_FILE):
-    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-        json.dump({"announcements": DEFAULT_ANNOUNCEMENTS, "api_key": DEFAULT_API_KEY}, f, ensure_ascii=False, indent=4)
+def ensure_config_file():
+    if not os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump({"announcements": DEFAULT_ANNOUNCEMENTS, "api_key": DEFAULT_API_KEY}, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            logging.error(f"创建配置文件失败: {e}")
+
+
+def lazy_import_heavy_modules():
+    """延迟导入重型模块"""
+    global ak, matplotlib, plt, mpf, pd, FigureCanvasTkAgg, NavigationToolbar2Tk
+
+    if ak is None:
+        logging.info("正在导入数据处理模块...")
+        try:
+            import akshare as ak_module
+            import matplotlib as matplotlib_module
+            import matplotlib.pyplot as plt_module
+            import mplfinance as mpf_module
+            import pandas as pd_module
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg as FigureCanvas, NavigationToolbar2Tk as NavToolbar
+
+            ak = ak_module
+            matplotlib = matplotlib_module
+            plt = plt_module
+            mpf = mpf_module
+            pd = pd_module
+            FigureCanvasTkAgg = FigureCanvas
+            NavigationToolbar2Tk = NavToolbar
+
+            # 设置matplotlib字体
+            matplotlib.rcParams['font.family'] = 'Microsoft YaHei'
+            matplotlib.rcParams['axes.unicode_minus'] = False
+
+            logging.info("数据处理模块导入完成")
+        except Exception as e:
+            logging.error(f"导入数据处理模块失败: {e}")
+            raise
+
+
+def lazy_init_openai_client():
+    """延迟初始化OpenAI客户端"""
+    global client
+
+    if client is None:
+        try:
+            api_key = load_api_key()
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+            logging.info("OpenAI客户端初始化完成")
+        except Exception as e:
+            logging.error(f"OpenAI客户端初始化失败: {e}")
 
 
 # 加载API KEY
@@ -53,15 +103,13 @@ def load_api_key():
             return api_key
     except Exception as e:
         logging.error(f"读取API Key失败: {e}")
-        raise
-
-
-api_key = load_api_key()
-client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        return DEFAULT_API_KEY
 
 
 # Function to save results to Excel
 def save_to_excel(results: list, filename: str = "stock_data.xlsx"):
+    if pd is None:
+        lazy_import_heavy_modules()
     df = pd.DataFrame(results)
     df.to_excel(filename, index=False, engine='openpyxl')
     print(f"Data saved to {filename}")
@@ -110,9 +158,8 @@ class KLineWindow:
         self.stock_name = stock_name
         self.window = None
         self.canvas = None
-        self.loading_label = None
         self.result_queue = queue.Queue()
-        self.window_id = str(uuid.uuid4())[:8]  # 生成唯一窗口ID
+        self.window_id = str(uuid.uuid4())[:8]
 
         # 创建窗口
         self.create_window()
@@ -136,23 +183,6 @@ class KLineWindow:
         main_frame = ttk.Frame(self.window)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # 创建状态框架
-        # status_frame = ttk.Frame(main_frame)
-        # status_frame.pack(fill=tk.X, pady=(0, 10))
-
-        # 加载提示
-        # self.loading_label = ttk.Label(
-        #     status_frame,
-        #     text=f"正在加载 {self.stock_name}({self.stock_code}) 的K线数据...",
-        #     font=('Microsoft YaHei', 12)
-        # )
-        # self.loading_label.pack(side=tk.LEFT)
-
-        # 进度指示器
-        # self.progress = ttk.Progressbar(status_frame, mode='indeterminate')
-        # self.progress.pack(side=tk.RIGHT, padx=(10, 0))
-        # self.progress.start()
-
         # 图表容器
         self.chart_frame = ttk.Frame(main_frame)
         self.chart_frame.pack(fill=tk.BOTH, expand=True)
@@ -172,6 +202,10 @@ class KLineWindow:
     def fetch_data_async(self):
         """异步获取K线数据"""
         try:
+            # 确保模块已导入
+            if ak is None:
+                lazy_import_heavy_modules()
+
             from datetime import datetime, timedelta
 
             # 获取交易日期逻辑
@@ -228,7 +262,6 @@ class KLineWindow:
                 stock_data_processed[col] = pd.to_numeric(stock_data_processed[col], errors='coerce')
 
             # 计算技术指标
-            # 移动平均线
             stock_data_processed['MA5'] = stock_data_processed['Close'].rolling(window=5).mean()
             stock_data_processed['MA10'] = stock_data_processed['Close'].rolling(window=10).mean()
             stock_data_processed['MA20'] = stock_data_processed['Close'].rolling(window=20).mean()
@@ -282,10 +315,6 @@ class KLineWindow:
     def display_chart(self, stock_data_processed, display_date):
         """显示K线图"""
         try:
-            # 停止进度条
-            # self.progress.stop()
-            # self.loading_label.config(text=f"正在绘制 {self.stock_name}({self.stock_code}) 的K线图...")
-
             # 创建自定义颜色样式（中国习惯：红涨绿跌）
             mc = mpf.make_marketcolors(
                 up='red',
@@ -302,27 +331,22 @@ class KLineWindow:
                 gridcolor='lightgray',
                 facecolor='white',
                 figcolor='white',
-                rc={'font.family': 'Microsoft YaHei'}  # 支持中文显示
+                rc={'font.family': 'Microsoft YaHei'}
             )
 
             # 准备附加图表（技术指标）
             apds = [
-                # 移动平均线
                 mpf.make_addplot(stock_data_processed['MA5'], color='blue', width=1.5),
                 mpf.make_addplot(stock_data_processed['MA10'], color='purple', width=1.5),
                 mpf.make_addplot(stock_data_processed['MA20'], color='orange', width=1.5),
-
-                # 布林带
                 mpf.make_addplot(stock_data_processed['BB_upper'], color='gray', width=1, alpha=0.7),
                 mpf.make_addplot(stock_data_processed['BB_lower'], color='gray', width=1, alpha=0.7),
-
-                # RSI (在第3个子图中显示)
                 mpf.make_addplot(stock_data_processed['RSI'], panel=2, color='purple', width=1.5),
                 mpf.make_addplot([70] * len(stock_data_processed), panel=2, color='red', width=0.8, linestyle='--', alpha=0.7),
                 mpf.make_addplot([30] * len(stock_data_processed), panel=2, color='green', width=0.8, linestyle='--', alpha=0.7),
             ]
 
-            # 创建matplotlib图形 - 关键：不使用plt.show()
+            # 创建matplotlib图形
             fig, axes = mpf.plot(
                 stock_data_processed,
                 type='candle',
@@ -335,7 +359,7 @@ class KLineWindow:
                 panel_ratios=(3, 1, 1),
                 tight_layout=True,
                 show_nontrading=False,
-                returnfig=True  # 关键：返回图形对象而不是显示
+                returnfig=True
             )
 
             # 添加图例
@@ -377,9 +401,6 @@ class KLineWindow:
             toolbar = NavigationToolbar2Tk(self.canvas, self.chart_frame)
             toolbar.update()
 
-            # 隐藏加载提示
-            # self.loading_label.config(text=f"{self.stock_name}({self.stock_code}) K线图加载完成")
-
             # 打印技术指标
             if not stock_data_processed.empty:
                 latest_data = stock_data_processed.iloc[-1]
@@ -392,9 +413,6 @@ class KLineWindow:
 
     def show_error(self, error_message):
         """显示错误信息"""
-        self.progress.stop()
-        self.loading_label.config(text="加载失败")
-
         error_frame = ttk.Frame(self.chart_frame)
         error_frame.pack(expand=True)
 
@@ -407,15 +425,8 @@ class KLineWindow:
 
     def retry_fetch(self):
         """重试获取数据"""
-        # 清空图表容器
         for widget in self.chart_frame.winfo_children():
             widget.destroy()
-
-        # 重新显示加载状态
-        self.loading_label.config(text=f"正在重新加载 {self.stock_name}({self.stock_code}) 的K线数据...")
-        self.progress.start()
-
-        # 重新获取数据
         threading.Thread(target=self.fetch_data_async, daemon=True).start()
         self.check_result()
 
@@ -430,33 +441,98 @@ class KLineWindow:
 class StockVisualizationApp:
     def __init__(self, master):
         self.master = master
-        master.title("草船借箭")
+        master.title("草船借箭 - 启动中...")
         self.center_window(master, 1200, 650)
 
-        self.announcements = self.load_announcements()
-        self.current_announcement_idx = 0
-        self.display_columns = ["代码", "名称", "交易所", "行业", "总市值", "最新", "涨幅", "今开", "最高", "最低", "总成交金额"]
+        # 创建启动提示
+        self.create_startup_ui()
 
-        self.bold_font = Font(weight="bold")
-        self.normal_font = Font(weight="normal")
-        self.announcement_font = Font(family="Microsoft YaHei", size=10, weight="bold")
+        # 延迟初始化主界面
+        master.after(100, self.initialize_main_app)
 
-        self.main_frame = ttk.Frame(master)
-        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+    def create_startup_ui(self):
+        """创建启动时的简单UI"""
+        startup_frame = tk.Frame(self.master, bg='white')
+        startup_frame.pack(fill=tk.BOTH, expand=True)
 
-        # K线图窗口管理
-        self.kline_windows = {}  # 存储所有打开的K线图窗口
-        self.kline_executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="KLine")  # 限制并发数
+        # 标题
+        title_label = tk.Label(startup_frame, text="草船借箭",
+                               font=('Microsoft YaHei', 24, 'bold'),
+                               bg='white', fg='#2E86AB')
+        title_label.pack(pady=(150, 20))
 
-        self.create_announcement_bar()
-        self.status_label = ttk.Label(self.main_frame, text="")
-        self.status_label.pack(side=tk.BOTTOM, fill=tk.X)
-        self.create_control_panel()
-        self.create_data_table()
-        threading.Thread(target=self.fetch_data, daemon=True).start()
-        self.selected_stock = {"code": "", "name": ""}
-        self.update_announcement()
-        self.update_clock()
+        # 启动提示
+        self.startup_label = tk.Label(startup_frame, text="正在启动程序...",
+                                      font=('Microsoft YaHei', 12),
+                                      bg='white', fg='#666666')
+        self.startup_label.pack(pady=10)
+
+        # 进度条
+        self.progress = ttk.Progressbar(startup_frame, mode='indeterminate', length=300)
+        self.progress.pack(pady=20)
+        self.progress.start()
+
+    def initialize_main_app(self):
+        """初始化主应用程序"""
+        try:
+            # 更新状态
+            self.startup_label.config(text="正在加载配置...")
+            self.master.update()
+
+            # 初始化配置
+            ensure_config_file()
+            self.announcements = self.load_announcements()
+            self.current_announcement_idx = 0
+            self.display_columns = ["代码", "名称", "交易所", "行业", "总市值", "最新", "涨幅", "今开", "最高", "最低", "总成交金额"]
+
+            self.bold_font = Font(weight="bold")
+            self.normal_font = Font(weight="normal")
+            self.announcement_font = Font(family="Microsoft YaHei", size=10, weight="bold")
+
+            # K线图窗口管理
+            self.kline_windows = {}
+            self.kline_executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="KLine")
+
+            self.selected_stock = {"code": "", "name": ""}
+
+            # 更新状态
+            self.startup_label.config(text="正在构建界面...")
+            self.master.update()
+
+            # 清除启动界面
+            for widget in self.master.winfo_children():
+                widget.destroy()
+
+            # 创建主界面
+            self.master.title("草船借箭")
+            self.main_frame = ttk.Frame(self.master)
+            self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+            self.create_announcement_bar()
+            self.status_label = ttk.Label(self.main_frame, text="界面加载完成，点击刷新数据获取股票信息")
+            self.status_label.pack(side=tk.BOTTOM, fill=tk.X)
+            self.create_control_panel()
+            self.create_data_table()
+
+            # 启动后台任务
+            self.update_announcement()
+            self.update_clock()
+
+            # 界面加载完成，询问是否立即加载数据
+            self.show_data_load_option()
+
+        except Exception as e:
+            logging.error(f"初始化主应用程序失败: {e}")
+            messagebox.showerror("启动错误", f"程序启动失败: {str(e)}")
+
+    def show_data_load_option(self):
+        """显示数据加载选项"""
+        result = messagebox.askyesno("数据加载", "是否立即加载股票数据？\n\n点击'是'立即加载（可能需要几分钟）\n点击'否'稍后手动加载")
+        if result:
+            # 用户选择立即加载
+            threading.Thread(target=self.fetch_data, daemon=True).start()
+        else:
+            self.status_label.config(text="程序已就绪，点击'刷新数据'按钮开始获取股票信息")
 
     def center_window(self, window, width, height):
         window.withdraw()
@@ -539,11 +615,9 @@ class StockVisualizationApp:
         self.center_window(config_window, 600, 800)
         config_window.resizable(True, True)
 
-        # 外层frame，确保按钮不会被内容挤出窗口
         outer_frame = ttk.Frame(config_window)
         outer_frame.pack(fill=tk.BOTH, expand=True)
 
-        # 编辑区
         text_frame = ttk.Frame(outer_frame)
         text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 0))
 
@@ -561,29 +635,15 @@ class StockVisualizationApp:
         self.announcement_text.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.announcement_text.yview)
 
-        # 帮助说明
         help_text = "提示：每条公告单独一行，系统将按顺序轮播显示"
         ttk.Label(outer_frame, text=help_text, foreground="gray").pack(anchor=tk.W, padx=10, pady=(6, 0))
 
-        # 按钮区
         button_frame = ttk.Frame(outer_frame)
         button_frame.pack(fill=tk.X, padx=10, pady=10, side=tk.BOTTOM)
 
-        ttk.Button(
-            button_frame,
-            text="取消",
-            command=config_window.destroy
-        ).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(
-            button_frame,
-            text="重置",
-            command=self.reset_announcements
-        ).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(
-            button_frame,
-            text="保存",
-            command=lambda: self.save_announcements(config_window)
-        ).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(button_frame, text="取消", command=config_window.destroy).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(button_frame, text="重置", command=self.reset_announcements).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(button_frame, text="保存", command=lambda: self.save_announcements(config_window)).pack(side=tk.RIGHT, padx=5)
 
         self.load_announcements_to_text()
 
@@ -591,6 +651,13 @@ class StockVisualizationApp:
         if not self.selected_stock["code"]:
             messagebox.showwarning("提示", "请先选择一只股票")
             return
+
+        if client is None:
+            try:
+                lazy_init_openai_client()
+            except Exception as e:
+                messagebox.showerror("错误", f"AI功能初始化失败: {str(e)}")
+                return
 
         stock_code = self.selected_stock["code"]
         stock_name = self.selected_stock["name"]
@@ -612,9 +679,7 @@ class StockVisualizationApp:
                     model="deepseek-chat",
                     messages=[{"role": "user", "content": prompt}],
                     stream=True,
-                    extra_body={
-                        "web_search": True  # 启用联网功能
-                    }
+                    extra_body={"web_search": True}
                 )
                 text_widget.config(state=tk.NORMAL)
                 text_widget.delete(1.0, tk.END)
@@ -669,8 +734,14 @@ class StockVisualizationApp:
 
     def fetch_data(self):
         try:
+            if ak is None:
+                self.status_label.config(text="正在初始化数据模块...")
+                self.master.update()
+                lazy_import_heavy_modules()
+
             self.status_label.config(text="正在获取数据...")
             self.master.update()
+
             stock_changes_em_df = ak.stock_changes_em(symbol="大笔买入")
             split_info = stock_changes_em_df['相关信息'].str.split(',', expand=True)
             split_info.columns = ['成交量', '成交价', '占成交量比', '成交金额']
@@ -771,61 +842,26 @@ class StockVisualizationApp:
     def create_control_panel(self):
         control_frame = ttk.LabelFrame(self.main_frame, text="控制面板", padding=10)
         control_frame.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(control_frame, text="刷新数据", command=self.fetch_data).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="刷新数据", command=lambda: threading.Thread(target=self.fetch_data, daemon=True).start()).pack(side=tk.LEFT, padx=5)
+
         amount_frame = ttk.Frame(control_frame)
         amount_frame.pack(side=tk.LEFT, padx=5)
         ttk.Label(amount_frame, text="最小成交金额(万):").pack(side=tk.LEFT, padx=5)
-        ttk.Button(
-            amount_frame,
-            text="-",
-            width=3,
-            command=lambda: self.adjust_amount(-200)
-        ).pack(side=tk.LEFT, padx=2)
+        ttk.Button(amount_frame, text="-", width=3, command=lambda: self.adjust_amount(-200)).pack(side=tk.LEFT, padx=2)
         self.amount_var = tk.StringVar(value="2000")
-        self.amount_label = ttk.Label(
-            amount_frame,
-            textvariable=self.amount_var,
-            width=6,
-            anchor="center",
-            background="white",
-            relief="sunken",
-            padding=3
-        )
+        self.amount_label = ttk.Label(amount_frame, textvariable=self.amount_var, width=6, anchor="center", background="white", relief="sunken", padding=3)
         self.amount_label.pack(side=tk.LEFT, padx=2)
-        ttk.Button(
-            amount_frame,
-            text="+",
-            width=3,
-            command=lambda: self.adjust_amount(200)
-        ).pack(side=tk.LEFT, padx=2)
+        ttk.Button(amount_frame, text="+", width=3, command=lambda: self.adjust_amount(200)).pack(side=tk.LEFT, padx=2)
 
-        # 总市值过滤
         market_cap_frame = ttk.Frame(control_frame)
         market_cap_frame.pack(side=tk.LEFT, padx=5)
         ttk.Label(market_cap_frame, text="最小总市值(亿):").pack(side=tk.LEFT, padx=5)
-        ttk.Button(
-            market_cap_frame,
-            text="-",
-            width=3,
-            command=lambda: self.adjust_market_cap(-10)
-        ).pack(side=tk.LEFT, padx=2)
+        ttk.Button(market_cap_frame, text="-", width=3, command=lambda: self.adjust_market_cap(-10)).pack(side=tk.LEFT, padx=2)
         self.market_cap_var = tk.StringVar(value="10")
-        self.market_cap_label = ttk.Label(
-            market_cap_frame,
-            textvariable=self.market_cap_var,
-            width=6,
-            anchor="center",
-            background="white",
-            relief="sunken",
-            padding=3
-        )
+        self.market_cap_label = ttk.Label(market_cap_frame, textvariable=self.market_cap_var, width=6, anchor="center", background="white", relief="sunken",
+                                          padding=3)
         self.market_cap_label.pack(side=tk.LEFT, padx=2)
-        ttk.Button(
-            market_cap_frame,
-            text="+",
-            width=3,
-            command=lambda: self.adjust_market_cap(10)
-        ).pack(side=tk.LEFT, padx=2)
+        ttk.Button(market_cap_frame, text="+", width=3, command=lambda: self.adjust_market_cap(10)).pack(side=tk.LEFT, padx=2)
 
         ttk.Label(control_frame, text="排序方式:").pack(side=tk.LEFT, padx=5)
         self.sort_var = tk.StringVar(value="总成交金额")
@@ -870,11 +906,7 @@ class StockVisualizationApp:
             self.column_vars[col] = var
             cb = ttk.Checkbutton(select_window, text=col, variable=var)
             cb.pack(anchor=tk.W, padx=10, pady=2)
-        ttk.Button(
-            select_window,
-            text="确认",
-            command=lambda: self.apply_column_selection(select_window)
-        ).pack(side=tk.BOTTOM, pady=10)
+        ttk.Button(select_window, text="确认", command=lambda: self.apply_column_selection(select_window)).pack(side=tk.BOTTOM, pady=10)
 
     def apply_column_selection(self, window):
         self.display_columns = [col for col, var in self.column_vars.items() if var.get()]
@@ -891,16 +923,13 @@ class StockVisualizationApp:
         # 创建loading覆盖层
         self.loading_frame = tk.Frame(self.tree_container, bg='white', bd=2, relief='solid')
 
-        # Loading 文字和图标
         loading_content = tk.Frame(self.loading_frame, bg='white')
         loading_content.pack(expand=True)
 
-        # 加载图标（使用简单的文字符号表示）
         self.loading_icon = tk.Label(loading_content, text="⟳", font=('Arial', 24), bg='white', fg='#2E86AB')
         self.loading_icon.pack(pady=5)
 
-        self.loading_text = tk.Label(loading_content, text="正在加载数据...",
-                                     font=('Microsoft YaHei', 12), bg='white', fg='#333333')
+        self.loading_text = tk.Label(loading_content, text="正在加载数据...", font=('Microsoft YaHei', 12), bg='white', fg='#333333')
         self.loading_text.pack(pady=5)
 
         self.tree = ttk.Treeview(self.tree_container, show="headings")
@@ -923,36 +952,27 @@ class StockVisualizationApp:
         self.context_menu.add_command(label="复制股票代码", command=self.copy_stock_code)
         self.context_menu.add_command(label="复制股票名称", command=self.copy_stock_name)
 
-        # 初始化动画相关变量
         self.animation_angle = 0
         self.loading_animation_id = None
 
     def show_loading(self):
         """显示加载动画"""
-        # 显示loading覆盖层
         self.loading_frame.place(x=0, y=0, relwidth=1, relheight=1)
-        self.loading_frame.lift()  # 确保loading层在最上方
-
-        # 开始旋转动画
+        self.loading_frame.lift()
         self.start_loading_animation()
 
     def hide_loading(self):
         """隐藏加载动画"""
-        # 隐藏loading覆盖层
         self.loading_frame.place_forget()
-
-        # 停止旋转动画
         self.stop_loading_animation()
 
     def start_loading_animation(self):
         """开始loading图标旋转动画"""
 
         def animate():
-            # 根据角度旋转图标（这里用不同的Unicode旋转符号模拟）
             rotation_chars = ["⟳", "⟲", "◐", "◑", "◒", "◓"]
             char_index = (self.animation_angle // 60) % len(rotation_chars)
             self.loading_icon.config(text=rotation_chars[char_index])
-
             self.animation_angle = (self.animation_angle + 30) % 360
             self.loading_animation_id = self.master.after(100, animate)
 
@@ -972,56 +992,45 @@ class StockVisualizationApp:
             values = self.tree.item(item, "values")
             code_idx = columns.index("代码")
             name_idx = columns.index("名称")
-            self.selected_stock = {
-                "code": values[code_idx],
-                "name": values[name_idx]
-            }
+            self.selected_stock = {"code": values[code_idx], "name": values[name_idx]}
             self.context_menu.post(event.x_root, event.y_root)
 
     def show_fundamental(self):
         if self.selected_stock["code"]:
-            messagebox.showinfo(
-                "基本面分析",
-                f"正在获取 {self.selected_stock['name']}({self.selected_stock['code']}) 的基本面数据...\n\n"
-                "功能实现中，这里可以展示:\n"
-                "- 财务指标(PE, PB, ROE等)\n"
-                "- 公司简介\n"
-                "- 行业对比\n"
-                "- 机构评级\n"
-            )
+            messagebox.showinfo("基本面分析",
+                                f"正在获取 {self.selected_stock['name']}({self.selected_stock['code']}) 的基本面数据...\n\n功能实现中，这里可以展示:\n- 财务指标(PE, PB, ROE等)\n- 公司简介\n- 行业对比\n- 机构评级\n")
 
     def show_k_line(self):
-        """显示K线图 - 新的并发实现"""
+        """显示K线图"""
         if not self.selected_stock["code"]:
             messagebox.showwarning("提示", "请先选择一只股票")
             return
 
+        if ak is None:
+            try:
+                lazy_import_heavy_modules()
+            except Exception as e:
+                messagebox.showerror("错误", f"加载图表模块失败: {str(e)}")
+                return
+
         stock_code = self.selected_stock["code"]
         stock_name = self.selected_stock["name"]
 
-        # 检查是否已经有相同股票的K线图窗口打开
         window_key = f"{stock_code}_{stock_name}"
         if window_key in self.kline_windows:
             existing_window = self.kline_windows[window_key]
             if existing_window.window and existing_window.window.winfo_exists():
-                # 如果窗口还存在，激活它
                 existing_window.window.lift()
                 existing_window.window.focus()
                 return
             else:
-                # 如果窗口已经被关闭，从字典中删除
                 del self.kline_windows[window_key]
 
-        # 创建新的K线图窗口
         try:
             kline_window = KLineWindow(self.master, stock_code, stock_name)
             self.kline_windows[window_key] = kline_window
-
             logging.info(f"创建K线图窗口: {stock_name}({stock_code}), 当前活跃窗口数: {len(self.kline_windows)}")
-
-            # 更新状态栏
             self.status_label.config(text=f"已打开 {stock_name}({stock_code}) 的K线图")
-
         except Exception as e:
             logging.error(f"创建K线图窗口失败: {e}")
             messagebox.showerror("错误", f"创建K线图窗口失败: {str(e)}")
@@ -1032,10 +1041,8 @@ class StockVisualizationApp:
         for key, window in self.kline_windows.items():
             if not window.window or not window.window.winfo_exists():
                 closed_windows.append(key)
-
         for key in closed_windows:
             del self.kline_windows[key]
-
         if closed_windows:
             logging.info(f"清理了 {len(closed_windows)} 个已关闭的K线图窗口")
 
@@ -1064,64 +1071,60 @@ class StockVisualizationApp:
             self.market_cap_var.set("10")
         sort_by = self.sort_var.get()
         current_date = datetime.now().strftime('%Y%m%d')
-        conn = sqlite3.connect('stock_data.db')
-        query = f"""
-        SELECT 
-            a.代码,
-            a.名称,
-            b.交易所,
-            b.行业,
-            b.总市值,
-            b.市场板块,
-            b.今开,
-            b.最新,
-            b.涨幅,
-            b.最低,
-            b.最高,
-            b.涨停,
-            COUNT(1) AS 总成笔数,
-            CAST(SUM(a.成交金额) / 10000 AS INTEGER) AS 总成交金额,
-            GROUP_CONCAT(CAST(a.成交金额 / 10000 AS INTEGER) || '万(' || a.时间 || ')', '|') AS 时间金额明细
-        FROM 
-            stock_changes_{current_date} a,
-            stock_real_data_{current_date} b
-        WHERE 
-            a.代码 = b.代码
-            AND b.总市值 >= {min_market_cap}
-        GROUP BY 
-            a.代码,
-            a.名称
-        HAVING 
-            总成交金额 > {min_amount}
-        ORDER BY 
-            {sort_by} DESC
-        """
-        full_df = pd.read_sql_query(query, conn)
-        conn.close()
-        save_to_excel(full_df)
-        available_columns = [col for col in self.display_columns if col in full_df.columns]
-        self.df = full_df[available_columns]
-        self.update_table()
+
+        try:
+            conn = sqlite3.connect('stock_data.db')
+            query = f"""
+            SELECT 
+                a.代码, a.名称, b.交易所, b.行业, b.总市值, b.市场板块,
+                b.今开, b.最新, b.涨幅, b.最低, b.最高, b.涨停,
+                COUNT(1) AS 总成笔数,
+                CAST(SUM(a.成交金额) / 10000 AS INTEGER) AS 总成交金额,
+                GROUP_CONCAT(CAST(a.成交金额 / 10000 AS INTEGER) || '万(' || a.时间 || ')', '|') AS 时间金额明细
+            FROM 
+                stock_changes_{current_date} a,
+                stock_real_data_{current_date} b
+            WHERE 
+                a.代码 = b.代码 AND b.总市值 >= {min_market_cap}
+            GROUP BY 
+                a.代码, a.名称
+            HAVING 
+                总成交金额 > {min_amount}
+            ORDER BY 
+                {sort_by} DESC
+            """
+
+            if pd is None:
+                lazy_import_heavy_modules()
+
+            full_df = pd.read_sql_query(query, conn)
+            conn.close()
+
+            if not full_df.empty:
+                save_to_excel(full_df)
+                available_columns = [col for col in self.display_columns if col in full_df.columns]
+                self.df = full_df[available_columns]
+                self.update_table()
+            else:
+                self.status_label.config(text="没有找到符合条件的数据，请先刷新数据或调整筛选条件")
+
+        except Exception as e:
+            logging.error(f"加载数据失败: {e}")
+            self.status_label.config(text="加载数据失败，请先刷新数据")
 
     def update_table(self):
-        # 显示loading动画
         self.show_loading()
-
-        # 使用after方法在下一个事件循环中执行表格更新，确保loading动画能显示
         self.master.after(10, self._update_table_content)
 
     def _update_table_content(self):
         """实际的表格更新内容"""
         try:
-            # 清空现有表格内容
             for i in self.tree.get_children():
                 self.tree.delete(i)
 
-            # 更新表格列
             columns = list(self.df.columns)
             self.tree["columns"] = columns
 
-            # 设置列宽
             col_widths = {
                 "代码": 120, "名称": 120, "交易所": 60, "市场板块": 80, "总市值": 80,
                 "今开": 70, "涨幅": 70, "最低": 70, "最高": 70, "涨停": 70,
@@ -1132,7 +1135,6 @@ class StockVisualizationApp:
                 self.tree.heading(col, text=col)
                 self.tree.column(col, width=col_widths.get(col, 100), anchor="center")
 
-            # 分批插入数据，让用户能看到加载过程
             self._insert_data_batch(0, columns)
 
         except Exception as e:
@@ -1144,7 +1146,6 @@ class StockVisualizationApp:
         try:
             end_index = min(start_index + batch_size, len(self.df))
 
-            # 插入当前批次的数据
             if "涨幅" in columns:
                 change_idx = columns.index("涨幅")
                 for i in range(start_index, end_index):
@@ -1168,15 +1169,11 @@ class StockVisualizationApp:
                     row = self.df.iloc[i]
                     self.tree.insert("", "end", values=list(row))
 
-            # 更新界面显示
             self.tree.update_idletasks()
 
-            # 如果还有更多数据，继续下一批
             if end_index < len(self.df):
-                # 使用较短的延迟继续下一批，让用户能看到加载过程
                 self.master.after(20, lambda: self._insert_data_batch(end_index, columns, batch_size))
             else:
-                # 所有数据加载完成，隐藏loading动画
                 self._finish_table_update()
 
         except Exception as e:
@@ -1190,7 +1187,6 @@ class StockVisualizationApp:
             self.vsb.lift()
             self.hsb.lift()
         finally:
-            # 隐藏loading动画
             self.hide_loading()
 
     def show_detail(self, event):
@@ -1232,6 +1228,7 @@ if __name__ == "__main__":
         root.iconbitmap(default="logo.ico")
     except:
         pass  # 如果图标文件不存在，忽略错误
+
     app = StockVisualizationApp(root)
 
 
