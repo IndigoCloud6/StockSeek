@@ -9,9 +9,9 @@ from datetime import datetime
 from tkinter import messagebox
 from tkinter import ttk
 from tkinter.font import Font
-import mplfinance as mpf
-import matplotlib
+
 import akshare as ak
+import matplotlib
 import pandas as pd
 from openai import OpenAI
 
@@ -400,6 +400,7 @@ class StockVisualizationApp:
         except Exception as e:
             logging.error(f"数据获取失败: {e}")
             self.status_label.config(text="数据获取失败")
+            self.load_data()
 
     def process_stock(self, stock_code, stock_name):
         try:
@@ -552,6 +553,22 @@ class StockVisualizationApp:
         ttk.Label(self.table_frame, text="股票交易明细", font=('Microsoft YaHei', 12, 'bold')).pack(anchor=tk.W)
         self.tree_container = ttk.Frame(self.table_frame)
         self.tree_container.pack(fill=tk.BOTH, expand=True)
+
+        # 创建loading覆盖层
+        self.loading_frame = tk.Frame(self.tree_container, bg='white', bd=2, relief='solid')
+
+        # Loading 文字和图标
+        loading_content = tk.Frame(self.loading_frame, bg='white')
+        loading_content.pack(expand=True)
+
+        # 加载图标（使用简单的文字符号表示）
+        self.loading_icon = tk.Label(loading_content, text="⟳", font=('Arial', 24), bg='white', fg='#2E86AB')
+        self.loading_icon.pack(pady=5)
+
+        self.loading_text = tk.Label(loading_content, text="正在加载数据...",
+                                     font=('Microsoft YaHei', 12), bg='white', fg='#333333')
+        self.loading_text.pack(pady=5)
+
         self.tree = ttk.Treeview(self.tree_container, show="headings")
         self.vsb = ttk.Scrollbar(self.tree_container, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=self.vsb.set)
@@ -565,12 +582,52 @@ class StockVisualizationApp:
         self.tree.bind("<Double-1>", self.show_detail)
         self.tree.bind("<Button-3>", self.on_right_click)
         self.context_menu = tk.Menu(self.master, tearoff=0)
+        self.context_menu.add_command(label="AI诊股", command=self.show_ai_diagnose)
         self.context_menu.add_command(label="基本面分析", command=self.show_fundamental)
         self.context_menu.add_command(label="K线图", command=self.show_k_line)
         self.context_menu.add_separator()
         self.context_menu.add_command(label="复制股票代码", command=self.copy_stock_code)
         self.context_menu.add_command(label="复制股票名称", command=self.copy_stock_name)
-        self.context_menu.add_command(label="AI诊股", command=self.show_ai_diagnose)
+        # 初始化动画相关变量
+        self.animation_angle = 0
+        self.loading_animation_id = None
+
+    def show_loading(self):
+        """显示加载动画"""
+        # 显示loading覆盖层
+        self.loading_frame.place(x=0, y=0, relwidth=1, relheight=1)
+        self.loading_frame.lift()  # 确保loading层在最上方
+
+        # 开始旋转动画
+        self.start_loading_animation()
+
+    def hide_loading(self):
+        """隐藏加载动画"""
+        # 隐藏loading覆盖层
+        self.loading_frame.place_forget()
+
+        # 停止旋转动画
+        self.stop_loading_animation()
+
+    def start_loading_animation(self):
+        """开始loading图标旋转动画"""
+
+        def animate():
+            # 根据角度旋转图标（这里用不同的Unicode旋转符号模拟）
+            rotation_chars = ["⟳", "⟲", "◐", "◑", "◒", "◓"]
+            char_index = (self.animation_angle // 60) % len(rotation_chars)
+            self.loading_icon.config(text=rotation_chars[char_index])
+
+            self.animation_angle = (self.animation_angle + 30) % 360
+            self.loading_animation_id = self.master.after(100, animate)
+
+        animate()
+
+    def stop_loading_animation(self):
+        """停止loading动画"""
+        if self.loading_animation_id:
+            self.master.after_cancel(self.loading_animation_id)
+            self.loading_animation_id = None
 
     def on_right_click(self, event):
         item = self.tree.identify_row(event.y)
@@ -874,41 +931,94 @@ class StockVisualizationApp:
         self.update_table()
 
     def update_table(self):
-        for i in self.tree.get_children():
-            self.tree.delete(i)
-        columns = list(self.df.columns)
-        self.tree["columns"] = columns
-        col_widths = {
-            "代码": 120, "名称": 120, "交易所": 60, "市场板块": 80, "总市值": 80,
-            "今开": 70, "涨幅": 70, "最低": 70, "最高": 70, "涨停": 70,
-            "总成笔数": 80, "总成交金额": 100, "时间金额明细": 200
-        }
-        for col in columns:
-            self.tree.heading(col, text=col)
-            self.tree.column(col, width=col_widths.get(col, 100), anchor="center")
-        if "涨幅" in columns:
-            change_idx = columns.index("涨幅")
-            for _, row in self.df.iterrows():
-                item = self.tree.insert("", "end", values=list(row))
-                try:
-                    change = float(row["涨幅"])
-                    if change > 0:
-                        self.tree.tag_configure(f"up_{item}", foreground='red', font=self.bold_font)
-                        self.tree.item(item, tags=(f"up_{item}",))
-                    elif change < 0:
-                        self.tree.tag_configure(f"down_{item}", foreground='green', font=self.bold_font)
-                        self.tree.item(item, tags=(f"down_{item}",))
-                    else:
-                        self.tree.tag_configure(f"zero_{item}", foreground='gray', font=self.normal_font)
-                        self.tree.item(item, tags=(f"zero_{item}",))
-                except ValueError:
-                    pass
-        else:
-            for _, row in self.df.iterrows():
-                self.tree.insert("", "end", values=list(row))
-        self.tree.update_idletasks()
-        self.vsb.lift()
-        self.hsb.lift()
+        # 显示loading动画
+        self.show_loading()
+
+        # 使用after方法在下一个事件循环中执行表格更新，确保loading动画能显示
+        self.master.after(10, self._update_table_content)
+
+    def _update_table_content(self):
+        """实际的表格更新内容"""
+        try:
+            # 清空现有表格内容
+            for i in self.tree.get_children():
+                self.tree.delete(i)
+
+            # 更新表格列
+            columns = list(self.df.columns)
+            self.tree["columns"] = columns
+
+            # 设置列宽
+            col_widths = {
+                "代码": 120, "名称": 120, "交易所": 60, "市场板块": 80, "总市值": 80,
+                "今开": 70, "涨幅": 70, "最低": 70, "最高": 70, "涨停": 70,
+                "总成笔数": 80, "总成交金额": 100, "时间金额明细": 200
+            }
+
+            for col in columns:
+                self.tree.heading(col, text=col)
+                self.tree.column(col, width=col_widths.get(col, 100), anchor="center")
+
+            # 分批插入数据，让用户能看到加载过程
+            self._insert_data_batch(0, columns)
+
+        except Exception as e:
+            logging.error(f"更新表格内容失败: {e}")
+            self.hide_loading()
+
+    def _insert_data_batch(self, start_index, columns, batch_size=50):
+        """分批插入数据，每批插入batch_size行"""
+        try:
+            end_index = min(start_index + batch_size, len(self.df))
+
+            # 插入当前批次的数据
+            if "涨幅" in columns:
+                change_idx = columns.index("涨幅")
+                for i in range(start_index, end_index):
+                    row = self.df.iloc[i]
+                    item = self.tree.insert("", "end", values=list(row))
+                    try:
+                        change = float(row["涨幅"])
+                        if change > 0:
+                            self.tree.tag_configure(f"up_{item}", foreground='red', font=self.bold_font)
+                            self.tree.item(item, tags=(f"up_{item}",))
+                        elif change < 0:
+                            self.tree.tag_configure(f"down_{item}", foreground='green', font=self.bold_font)
+                            self.tree.item(item, tags=(f"down_{item}",))
+                        else:
+                            self.tree.tag_configure(f"zero_{item}", foreground='gray', font=self.normal_font)
+                            self.tree.item(item, tags=(f"zero_{item}",))
+                    except ValueError:
+                        pass
+            else:
+                for i in range(start_index, end_index):
+                    row = self.df.iloc[i]
+                    self.tree.insert("", "end", values=list(row))
+
+            # 更新界面显示
+            self.tree.update_idletasks()
+
+            # 如果还有更多数据，继续下一批
+            if end_index < len(self.df):
+                # 使用较短的延迟继续下一批，让用户能看到加载过程
+                self.master.after(20, lambda: self._insert_data_batch(end_index, columns, batch_size))
+            else:
+                # 所有数据加载完成，隐藏loading动画
+                self._finish_table_update()
+
+        except Exception as e:
+            logging.error(f"批量插入数据失败: {e}")
+            self.hide_loading()
+
+    def _finish_table_update(self):
+        """完成表格更新的最后步骤"""
+        try:
+            self.tree.update_idletasks()
+            self.vsb.lift()
+            self.hsb.lift()
+        finally:
+            # 隐藏loading动画
+            self.hide_loading()
 
     def show_detail(self, event):
         item = self.tree.selection()[0]
