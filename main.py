@@ -817,6 +817,10 @@ class StockVisualizationApp:
             price_change_percent = float(stock_bid_ask_df[stock_bid_ask_df['item'] == '涨幅']['value'].iloc[0]) if '涨幅' in stock_bid_ask_df[
                 'item'].values else None
             opening_price = float(stock_bid_ask_df[stock_bid_ask_df['item'] == '今开']['value'].iloc[0]) if '今开' in stock_bid_ask_df['item'].values else None
+
+            turnover_rate = float(stock_bid_ask_df[stock_bid_ask_df['item'] == '换手']['value'].iloc[0]) if '换手' in stock_bid_ask_df['item'].values else None
+            volume_ratio = float(stock_bid_ask_df[stock_bid_ask_df['item'] == '量比']['value'].iloc[0]) if '量比' in stock_bid_ask_df['item'].values else None
+
             max_price = float(stock_bid_ask_df[stock_bid_ask_df['item'] == '最高']['value'].iloc[0]) if '最高' in stock_bid_ask_df['item'].values else None
             min_price = float(stock_bid_ask_df[stock_bid_ask_df['item'] == '最低']['value'].iloc[0]) if '最低' in stock_bid_ask_df['item'].values else None
             zhang_ting = float(stock_bid_ask_df[stock_bid_ask_df['item'] == '涨停']['value'].iloc[0]) if '涨停' in stock_bid_ask_df['item'].values else None
@@ -833,6 +837,8 @@ class StockVisualizationApp:
                 '最高': max_price,
                 '最低': min_price,
                 '涨停': zhang_ting,
+                '换手': turnover_rate,
+                '量比': volume_ratio,
                 '今开': opening_price
             }
         except Exception as e:
