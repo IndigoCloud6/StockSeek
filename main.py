@@ -386,7 +386,7 @@ class KLineWindow:
 
             # 在图表底部添加标题
             fig.suptitle(f'{self.stock_name}({self.stock_code}) - {display_date} K线图',
-                         fontsize=14, fontweight='bold', y=0.02)
+                         fontsize=14, fontweight='bold', y=0.05)
 
             # 清空图表容器
             for widget in self.chart_frame.winfo_children():
