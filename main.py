@@ -483,7 +483,7 @@ class StockVisualizationApp:
             ensure_config_file()
             self.announcements = self.load_announcements()
             self.current_announcement_idx = 0
-            self.display_columns = ["代码", "名称", "交易所", "行业", "总市值", "最新", "涨幅", "今开", "最高", "最低", "总成交金额"]
+            self.display_columns = ["代码", "名称", "交易所", "行业", "总市值", "最新", "涨幅", "今开", "最高", "最低", "换手", "量比", "总成交金额"]
 
             self.bold_font = Font(weight="bold")
             self.normal_font = Font(weight="normal")
@@ -871,7 +871,7 @@ class StockVisualizationApp:
 
         ttk.Label(control_frame, text="排序方式:").pack(side=tk.LEFT, padx=5)
         self.sort_var = tk.StringVar(value="总成交金额")
-        sort_options = ["总成交金额", "涨幅", "总成笔数"]
+        sort_options = ["总成交金额", "涨幅", "总成笔数", "换手", "量比"]
         sort_combo = ttk.Combobox(control_frame, textvariable=self.sort_var, values=sort_options, width=10, state="readonly")
         sort_combo.pack(side=tk.LEFT, padx=5)
         sort_combo.bind("<<ComboboxSelected>>", lambda e: self.load_data())
@@ -904,7 +904,7 @@ class StockVisualizationApp:
         all_columns = [
             "代码", "名称", "交易所", "市场板块", "总市值",
             "今开", "涨幅", "最新", "最低", "最高", "涨停",
-            "总成笔数", "总成交金额", "时间金额明细"
+            "换手", "量比","总成笔数", "总成交金额", "时间金额明细"
         ]
         self.column_vars = {}
         for col in all_columns:
@@ -1084,6 +1084,7 @@ class StockVisualizationApp:
             SELECT 
                 a.代码, a.名称, b.交易所, b.行业, b.总市值, b.市场板块,
                 b.今开, b.最新, b.涨幅, b.最低, b.最高, b.涨停,
+                b.换手, b.量比,
                 COUNT(1) AS 总成笔数,
                 CAST(SUM(a.成交金额) / 10000 AS INTEGER) AS 总成交金额,
                 GROUP_CONCAT(CAST(a.成交金额 / 10000 AS INTEGER) || '万(' || a.时间 || ')', '|') AS 时间金额明细
@@ -1133,7 +1134,7 @@ class StockVisualizationApp:
 
             col_widths = {
                 "代码": 120, "名称": 120, "交易所": 60, "市场板块": 80, "总市值": 80,
-                "今开": 70, "涨幅": 70, "最低": 70, "最高": 70, "涨停": 70,
+                "今开": 70, "涨幅": 70, "最低": 70, "最高": 70, "涨停": 70, "换手": 80, "量比": 80,
                 "总成笔数": 80, "总成交金额": 100, "时间金额明细": 200
             }
 
