@@ -938,7 +938,19 @@ class StockVisualizationApp:
         self.loading_text = tk.Label(loading_content, text="正在加载数据...", font=('Microsoft YaHei', 12), bg='white', fg='#333333')
         self.loading_text.pack(pady=5)
 
-        self.tree = ttk.Treeview(self.tree_container, show="headings")
+        # 配置Treeview样式
+        style = ttk.Style()
+        # 设置字体大小
+        style.configure("Custom.Treeview", font=('Microsoft YaHei', 8))  # 10是字体大小，可以调整
+        # 设置行高
+        style.configure("Custom.Treeview", rowheight=30)  # 25是行高，可以调整
+        # 设置表头字体
+        style.configure("Custom.Treeview.Heading", font=('Microsoft YaHei', 11, 'bold'))
+
+        # 创建Treeview时使用自定义样式
+        self.tree = ttk.Treeview(self.tree_container, show="headings", style="Custom.Treeview")
+
+        #self.tree = ttk.Treeview(self.tree_container, show="headings")
         self.vsb = ttk.Scrollbar(self.tree_container, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=self.vsb.set)
         self.hsb = ttk.Scrollbar(self.tree_container, orient="horizontal", command=self.tree.xview)
