@@ -442,7 +442,7 @@ class StockVisualizationApp:
     def __init__(self, master):
         self.master = master
         master.title("草船借箭 - 启动中...")
-        self.center_window(master, 1200, 650)
+        self.center_window(master, 1400, 650)
 
         # 创建启动提示
         self.create_startup_ui()
@@ -943,7 +943,7 @@ class StockVisualizationApp:
         # 设置字体大小
         style.configure("Custom.Treeview", font=('Microsoft YaHei', 8))  # 10是字体大小，可以调整
         # 设置行高
-        style.configure("Custom.Treeview", rowheight=30)  # 25是行高，可以调整
+        style.configure("Custom.Treeview", rowheight=30)  # 30是行高，可以调整
         # 设置表头字体
         style.configure("Custom.Treeview.Heading", font=('Microsoft YaHei', 11, 'bold'))
 
@@ -1160,7 +1160,7 @@ class StockVisualizationApp:
             logging.error(f"更新表格内容失败: {e}")
             self.hide_loading()
 
-    def _insert_data_batch(self, start_index, columns, batch_size=50):
+    def _insert_data_batch(self, start_index, columns, batch_size=100):
         """分批插入数据，每批插入batch_size行"""
         try:
             end_index = min(start_index + batch_size, len(self.df))
