@@ -1403,15 +1403,15 @@ class StockVisualizationApp:
                         str(row['日期'].date()) if pd.notna(row['日期']) and hasattr(row['日期'], 'date') else str(row['日期']) if pd.notna(row['日期']) else "",
                         f"{row['收盘价']:.2f}" if pd.notna(row['收盘价']) else "0.00",
                         f"{row['涨跌幅']:.2f}" if pd.notna(row['涨跌幅']) else "0.00",
-                        f"{row['主力净流入-净额']:.0f}" if pd.notna(row['主力净流入-净额']) else "0",
+                        f"{row['主力净流入-净额'] / 10000:.0f}" if pd.notna(row['主力净流入-净额']) else "0",
                         f"{row['主力净流入-净占比']:.2f}" if pd.notna(row['主力净流入-净占比']) else "0.00",
-                        f"{row['超大单净流入-净额']:.0f}" if pd.notna(row['超大单净流入-净额']) else "0",
+                        f"{row['超大单净流入-净额'] / 10000:.0f}" if pd.notna(row['超大单净流入-净额']) else "0",
                         f"{row['超大单净流入-净占比']:.2f}" if pd.notna(row['超大单净流入-净占比']) else "0.00",
-                        f"{row['大单净流入-净额']:.0f}" if pd.notna(row['大单净流入-净额']) else "0",
+                        f"{row['大单净流入-净额'] / 10000:.0f}" if pd.notna(row['大单净流入-净额']) else "0",
                         f"{row['大单净流入-净占比']:.2f}" if pd.notna(row['大单净流入-净占比']) else "0.00",
-                        f"{row['中单净流入-净额']:.0f}" if pd.notna(row['中单净流入-净额']) else "0",
+                        f"{row['中单净流入-净额'] / 10000:.0f}" if pd.notna(row['中单净流入-净额']) else "0",
                         f"{row['中单净流入-净占比']:.2f}" if pd.notna(row['中单净流入-净占比']) else "0.00",
-                        f"{row['小单净流入-净额']:.0f}" if pd.notna(row['小单净流入-净额']) else "0",
+                        f"{row['小单净流入-净额'] / 10000:.0f}" if pd.notna(row['小单净流入-净额']) else "0",
                         f"{row['小单净流入-净占比']:.2f}" if pd.notna(row['小单净流入-净占比']) else "0.00"
                     ]
 
@@ -1467,11 +1467,12 @@ class StockVisualizationApp:
                 else:
                     date_range_text = f"共 {len(fund_flow_df)} 天数据"
 
-                stats_text1 = f"10天总主力净流入: {total_main_flow:.0f}万元  |  " \
-                              f"日均主力净流入: {avg_main_flow:.0f}万元"
+                # 将这几行的显示文本修改：
+                stats_text1 = f"10天总主力净流入: {total_main_flow / 10000:.0f}万元  |  " \
+                              f"日均主力净流入: {avg_main_flow / 10000:.0f}万元"
 
-                stats_text2 = f"近3天主力净流入: {recent_3_flow:.0f}万元  |  " \
-                              f"近5天主力净流入: {recent_5_flow:.0f}万元"
+                stats_text2 = f"近3天主力净流入: {recent_3_flow / 10000:.0f}万元  |  " \
+                              f"近5天主力净流入: {recent_5_flow / 10000:.0f}万元"
 
                 stats_text3 = f"净流入天数: {inflow_days}天  |  " \
                               f"净流出天数: {outflow_days}天  |  " \
