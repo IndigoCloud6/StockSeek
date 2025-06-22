@@ -478,7 +478,10 @@ class StockVisualizationApp:
             # 更新状态
             self.startup_label.config(text="正在加载配置...")
             self.master.update()
-
+            # 添加进度跟踪变量
+            self.processed_count = 0
+            self.failed_count = 0
+            self.progress_lock = threading.Lock()
             # 初始化配置
             ensure_config_file()
             self.announcements = self.load_announcements()
@@ -739,7 +742,7 @@ class StockVisualizationApp:
                 self.master.update()
                 lazy_import_heavy_modules()
 
-            self.status_label.config(text="正在获取数据...")
+            self.status_label.config(text="正在获取大笔买入数据...")
             self.master.update()
 
             stock_changes_em_df = ak.stock_changes_em(symbol="大笔买入")
@@ -756,6 +759,10 @@ class StockVisualizationApp:
                 current_date_obj.strftime('%Y-%m-%d') + ' ' + stock_changes_em_df['时间'].apply(lambda x: x.strftime('%H:%M:%S')),
                 format='%Y-%m-%d %H:%M:%S'
             )
+
+            self.status_label.config(text="正在保存大笔买入数据到数据库...")
+            self.master.update()
+
             conn = sqlite3.connect('stock_data.db')
             table_name = f'stock_changes_{current_date}'
             try:
@@ -769,6 +776,8 @@ class StockVisualizationApp:
                 pass
             stock_changes_em_df.to_sql(table_name, conn, if_exists='append', index=False)
             logging.info(f"数据已成功存入 SQLite 数据库表 {table_name}！")
+
+            # 准备处理股票实时数据
             real_data_list = []
             stock_info = stock_changes_em_df[['代码', '名称']].drop_duplicates(subset=['代码'])
 
@@ -777,16 +786,88 @@ class StockVisualizationApp:
                 return not (exchange == 'bj' or market == '科创板' or market == '创业板')
 
             filtered_stock_info = stock_info[stock_info.apply(not_bj_kcb, axis=1)]
-            max_workers = min(10, len(filtered_stock_info))
+
+            # 显示总股票数量
+            total_stocks = len(filtered_stock_info)
+            self.status_label.config(text=f"开始获取 {total_stocks} 只股票的实时数据...")
+            self.master.update()
+
+            # 用于跟踪进度的变量
+            self.processed_count = 0
+            self.failed_count = 0
+            self.progress_lock = threading.Lock()
+
+            def update_progress_status():
+                """更新进度显示"""
+                with self.progress_lock:
+                    progress_percentage = (self.processed_count / total_stocks) * 100
+                    self.status_label.config(
+                        text=f"正在获取股票数据... {self.processed_count}/{total_stocks} "
+                             f"({progress_percentage:.1f}%) - 成功:{self.processed_count - self.failed_count} 失败:{self.failed_count}"
+                    )
+                    self.master.update()
+
+            def process_stock_with_progress(stock_code, stock_name):
+                """带进度更新的process_stock包装函数"""
+                try:
+                    result = self.process_stock(stock_code, stock_name)
+
+                    # 更新进度
+                    with self.progress_lock:
+                        self.processed_count += 1
+                        if result is None:
+                            self.failed_count += 1
+
+                    # 每处理10个股票或者处理完成时更新一次状态显示（避免过于频繁更新）
+                    if self.processed_count % 10 == 0 or self.processed_count == total_stocks:
+                        # 使用after方法在主线程中更新UI
+                        self.master.after(0, update_progress_status)
+
+                    return result
+                except Exception as e:
+                    logging.error(f"处理股票 {stock_code}({stock_name}) 时出错: {e}")
+
+                    # 更新进度
+                    with self.progress_lock:
+                        self.processed_count += 1
+                        self.failed_count += 1
+
+                    # 更新状态显示
+                    if self.processed_count % 10 == 0 or self.processed_count == total_stocks:
+                        self.master.after(0, update_progress_status)
+
+                    return None
+
+            max_workers = min(10, total_stocks)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 创建future到股票代码的映射
                 future_to_stock = {
-                    executor.submit(self.process_stock, row['代码'], row['名称']): row['代码']
+                    executor.submit(process_stock_with_progress, row['代码'], row['名称']): (row['代码'], row['名称'])
                     for _, row in filtered_stock_info.iterrows()
                 }
+
+                # 处理完成的任务
                 for future in as_completed(future_to_stock):
-                    result = future.result()
-                    if result:
-                        real_data_list.append(result)
+                    stock_code, stock_name = future_to_stock[future]
+                    try:
+                        result = future.result()
+                        if result:
+                            real_data_list.append(result)
+                    except Exception as e:
+                        logging.error(f"获取股票 {stock_code}({stock_name}) 结果时出错: {e}")
+
+            # 最终状态更新
+            successful_count = len(real_data_list)
+            self.status_label.config(text=f"股票数据获取完成！成功: {successful_count}/{total_stocks} 只股票")
+            self.master.update()
+
+            if not real_data_list:
+                self.status_label.config(text="未获取到任何股票数据")
+                return
+
+            self.status_label.config(text="正在保存股票实时数据到数据库...")
+            self.master.update()
+
             stock_real_data_df = pd.DataFrame(real_data_list)
             real_table_name = f'stock_real_data_{current_date}'
             try:
@@ -801,11 +882,22 @@ class StockVisualizationApp:
             stock_real_data_df.to_sql(real_table_name, conn, if_exists='replace', index=False)
             logging.info(f"实时数据已成功存入 SQLite 数据库表 {real_table_name}！")
             conn.close()
-            self.status_label.config(text="数据获取完成")
+
+            self.status_label.config(text=f"数据获取完成！共处理 {successful_count} 只股票，正在加载到表格...")
+            self.master.update()
+
+            # 加载数据到界面
             self.load_data()
+
+            # 最终完成状态
+            final_message = f"数据刷新完成！成功获取 {successful_count} 只股票数据"
+            if self.failed_count > 0:
+                final_message += f"（失败 {self.failed_count} 只）"
+            self.status_label.config(text=final_message)
+
         except Exception as e:
             logging.error(f"数据获取失败: {e}")
-            self.status_label.config(text="数据获取失败")
+            self.status_label.config(text=f"数据获取失败: {str(e)}")
 
     def process_stock(self, stock_code, stock_name):
         try:
@@ -965,6 +1057,7 @@ class StockVisualizationApp:
         self.context_menu = tk.Menu(self.master, tearoff=0)
         self.context_menu.add_command(label="大笔买入", command=self.show_big_buy_orders)
         self.context_menu.add_command(label="基本面分析", command=self.show_fundamental)
+        self.context_menu.add_command(label="资金流", command=self.show_fund_flow)
         self.context_menu.add_command(label="K线图", command=self.show_k_line)
         self.context_menu.add_command(label="AI诊股", command=self.show_ai_diagnose)
         self.context_menu.add_separator()
@@ -1189,6 +1282,221 @@ class StockVisualizationApp:
         # 添加导出功能按钮
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill=tk.X, pady=(10, 0))
+
+    def show_fund_flow(self):
+        """显示个股资金流（最近10天）"""
+        if not self.selected_stock["code"]:
+            messagebox.showwarning("提示", "请先选择一只股票")
+            return
+
+        if ak is None:
+            try:
+                lazy_import_heavy_modules()
+            except Exception as e:
+                messagebox.showerror("错误", f"加载数据模块失败: {str(e)}")
+                return
+
+        stock_code = self.selected_stock["code"]
+        stock_name = self.selected_stock["name"]
+
+        # 创建资金流窗口
+        fund_flow_window = tk.Toplevel(self.master)
+        fund_flow_window.title(f"个股资金流（最近10天） - {stock_name}({stock_code})")
+        fund_flow_window.geometry("1200x750")
+
+        # 居中显示
+        self.center_window(fund_flow_window, 1200, 750)
+
+        # 创建主框架
+        main_frame = ttk.Frame(fund_flow_window)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # 标题
+        title_label = ttk.Label(main_frame, text=f"{stock_name}({stock_code}) - 资金流向分析（最近10天）",
+                                font=('Microsoft YaHei', 14, 'bold'))
+        title_label.pack(pady=(0, 10))
+
+        # 状态标签
+        status_label = ttk.Label(main_frame, text="正在获取资金流数据...")
+        status_label.pack(pady=5)
+
+        # 创建表格框架
+        table_frame = ttk.Frame(main_frame)
+        table_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 创建Treeview表格
+        columns = ["日期", "收盘价", "涨跌幅(%)", "主力净流入-净额", "主力净流入-净占比(%)",
+                   "超大单净流入-净额", "超大单净流入-净占比(%)", "大单净流入-净额"]
+
+        tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=15)
+
+        # 设置列标题和宽度
+        col_widths = {
+            "日期": 100, "收盘价": 80, "涨跌幅(%)": 80,
+            "主力净流入-净额": 120, "主力净流入-净占比(%)": 130,
+            "超大单净流入-净额": 130, "超大单净流入-净占比(%)": 140,
+            "大单净流入-净额": 120, "大单净流入-净占比(%)": 130
+        }
+
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=col_widths.get(col, 100), anchor="center")
+
+        # 添加滚动条
+        v_scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
+        h_scrollbar = ttk.Scrollbar(table_frame, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+
+        # 布局
+        tree.grid(row=0, column=0, sticky="nsew")
+        v_scrollbar.grid(row=0, column=1, sticky="ns")
+        h_scrollbar.grid(row=1, column=0, sticky="ew")
+
+        table_frame.grid_rowconfigure(0, weight=1)
+        table_frame.grid_columnconfigure(0, weight=1)
+
+        # 异步获取数据
+        def fetch_fund_flow_data():
+            try:
+                # 确定交易所代码
+                exchange, _ = get_stock_info(stock_code)
+                market_mapping = {
+                    'sh': 'sh',
+                    'sz': 'sz',
+                    'bj': 'bj'
+                }
+                market = market_mapping.get(exchange, 'sh')
+
+                status_label.config(text=f"正在获取{stock_name}({stock_code})的资金流数据...")
+                fund_flow_window.update()
+
+                # 调用akshare获取资金流数据
+                fund_flow_df = ak.stock_individual_fund_flow(stock=stock_code, market=market)
+
+                if fund_flow_df.empty:
+                    status_label.config(text="未获取到资金流数据")
+                    return
+
+                # 确保日期列是datetime格式，然后按日期降序排序获取最近的10天数据
+                if '日期' in fund_flow_df.columns:
+                    # 转换日期格式
+                    fund_flow_df['日期'] = pd.to_datetime(fund_flow_df['日期'])
+                    # 按日期降序排序，最新的在前面
+                    fund_flow_df = fund_flow_df.sort_values('日期', ascending=False)
+                    # 取最近的10天数据
+                    fund_flow_df = fund_flow_df.head(10)
+                else:
+                    # 如果没有日期列，则直接取最后10行（通常最新的数据在后面）
+                    fund_flow_df = fund_flow_df.tail(10).iloc[::-1]  # tail(10)取后10行，然后reverse顺序
+
+                # 数据处理和显示
+                status_label.config(text=f"获取到最近 {len(fund_flow_df)} 天的资金流数据")
+
+                # 清空现有数据
+                for item in tree.get_children():
+                    tree.delete(item)
+
+                # 插入数据（现在数据已经按最新到最旧排序）
+                for index, row in fund_flow_df.iterrows():
+                    # 格式化数据
+                    values = [
+                        str(row['日期'].date()) if pd.notna(row['日期']) and hasattr(row['日期'], 'date') else str(row['日期']) if pd.notna(row['日期']) else "",
+                        f"{row['收盘价']:.2f}" if pd.notna(row['收盘价']) else "0.00",
+                        f"{row['涨跌幅']:.2f}" if pd.notna(row['涨跌幅']) else "0.00",
+                        f"{row['主力净流入-净额']:.0f}" if pd.notna(row['主力净流入-净额']) else "0",
+                        f"{row['主力净流入-净占比']:.2f}" if pd.notna(row['主力净流入-净占比']) else "0.00",
+                        f"{row['超大单净流入-净额']:.0f}" if pd.notna(row['超大单净流入-净额']) else "0",
+                        f"{row['超大单净流入-净占比']:.2f}" if pd.notna(row['超大单净流入-净占比']) else "0.00",
+                        f"{row['大单净流入-净额']:.0f}" if pd.notna(row['大单净流入-净额']) else "0",
+                        f"{row['大单净流入-净占比']:.2f}" if pd.notna(row['大单净流入-净占比']) else "0.00",
+                        f"{row['中单净流入-净额']:.0f}" if pd.notna(row['中单净流入-净额']) else "0",
+                        f"{row['中单净流入-净占比']:.2f}" if pd.notna(row['中单净流入-净占比']) else "0.00",
+                        f"{row['小单净流入-净额']:.0f}" if pd.notna(row['小单净流入-净额']) else "0",
+                        f"{row['小单净流入-净占比']:.2f}" if pd.notna(row['小单净流入-净占比']) else "0.00"
+                    ]
+
+                    item = tree.insert("", "end", values=values)
+
+                    # 根据涨跌幅设置颜色
+                    try:
+                        change_pct = float(row['涨跌幅'])
+                        if change_pct > 0:
+                            tree.tag_configure(f"up_{item}", foreground='red')
+                            tree.item(item, tags=(f"up_{item}",))
+                        elif change_pct < 0:
+                            tree.tag_configure(f"down_{item}", foreground='green')
+                            tree.item(item, tags=(f"down_{item}",))
+                    except (ValueError, TypeError):
+                        pass
+
+                    # 根据主力净流入设置背景色
+                    try:
+                        main_flow = float(row['主力净流入-净额'])
+                        if main_flow > 0:
+                            tree.tag_configure(f"inflow_{item}", background='#FFE4E1')  # 浅红色背景
+                            current_tags = tree.item(item, "tags")
+                            tree.item(item, tags=current_tags + (f"inflow_{item}",))
+                        elif main_flow < 0:
+                            tree.tag_configure(f"outflow_{item}", background='#E0FFE0')  # 浅绿色背景
+                            current_tags = tree.item(item, "tags")
+                            tree.item(item, tags=current_tags + (f"outflow_{item}",))
+                    except (ValueError, TypeError):
+                        pass
+
+                # 添加统计信息
+                stats_frame = ttk.LabelFrame(main_frame, text="统计信息（最近10天）", padding=10)
+                stats_frame.pack(fill=tk.X, pady=(10, 0))
+
+                # 计算统计数据
+                total_main_flow = fund_flow_df['主力净流入-净额'].sum()
+                avg_main_flow = fund_flow_df['主力净流入-净额'].mean()
+
+                # 计算最近3天和5天的数据（现在数据已经按最新到最旧排序）
+                recent_3_flow = fund_flow_df.head(3)['主力净流入-净额'].sum() if len(fund_flow_df) >= 3 else fund_flow_df['主力净流入-净额'].sum()
+                recent_5_flow = fund_flow_df.head(5)['主力净流入-净额'].sum() if len(fund_flow_df) >= 5 else fund_flow_df['主力净流入-净额'].sum()
+
+                # 计算流入流出天数
+                inflow_days = len(fund_flow_df[fund_flow_df['主力净流入-净额'] > 0])
+                outflow_days = len(fund_flow_df[fund_flow_df['主力净流入-净额'] < 0])
+
+                # 获取最新和最旧的日期用于显示
+                if '日期' in fund_flow_df.columns and len(fund_flow_df) > 0:
+                    latest_date = fund_flow_df['日期'].max().strftime('%Y-%m-%d') if hasattr(fund_flow_df['日期'].max(), 'strftime') else str(fund_flow_df['日期'].max())
+                    earliest_date = fund_flow_df['日期'].min().strftime('%Y-%m-%d') if hasattr(fund_flow_df['日期'].min(), 'strftime') else str(fund_flow_df['日期'].min())
+                    date_range_text = f"数据范围: {earliest_date} 至 {latest_date}"
+                else:
+                    date_range_text = f"共 {len(fund_flow_df)} 天数据"
+
+                stats_text1 = f"10天总主力净流入: {total_main_flow:.0f}万元  |  " \
+                              f"日均主力净流入: {avg_main_flow:.0f}万元"
+
+                stats_text2 = f"近3天主力净流入: {recent_3_flow:.0f}万元  |  " \
+                              f"近5天主力净流入: {recent_5_flow:.0f}万元"
+
+                stats_text3 = f"净流入天数: {inflow_days}天  |  " \
+                              f"净流出天数: {outflow_days}天  |  " \
+                              f"{date_range_text}"
+
+                ttk.Label(stats_frame, text=stats_text1, font=('Microsoft YaHei', 10)).pack(pady=2)
+                ttk.Label(stats_frame, text=stats_text2, font=('Microsoft YaHei', 10)).pack(pady=2)
+                ttk.Label(stats_frame, text=stats_text3, font=('Microsoft YaHei', 10)).pack(pady=2)
+
+                # 添加说明
+                info_frame = ttk.Frame(main_frame)
+                info_frame.pack(fill=tk.X, pady=(5, 0))
+
+                info_text = "说明: 数据按时间倒序排列（最新在前）；红色表示上涨，绿色表示下跌；浅红色背景表示主力净流入，浅绿色背景表示主力净流出"
+                ttk.Label(info_frame, text=info_text, font=('Microsoft YaHei', 9), foreground='gray').pack()
+
+                logging.info(f"成功获取{stock_name}({stock_code})的资金流数据: 最近{len(fund_flow_df)}天的记录")
+
+            except Exception as e:
+                logging.error(f"获取资金流数据失败: {e}")
+                status_label.config(text=f"获取资金流数据失败: {str(e)}")
+                messagebox.showerror("错误", f"获取资金流数据失败: {str(e)}")
+
+        # 在后台线程中获取数据
+        threading.Thread(target=fetch_fund_flow_data, daemon=True).start()
 
     def show_k_line(self):
         """显示K线图"""
