@@ -902,9 +902,9 @@ class StockVisualizationApp:
         select_window.title("选择显示字段")
         self.center_window(select_window, 300, 600)
         all_columns = [
-            "代码", "名称", "交易所", "市场板块", "总市值",
+            "代码", "名称", "行业", "交易所", "市场板块", "总市值",
             "今开", "涨幅", "最新", "最低", "最高", "涨停",
-            "换手", "量比","总成笔数", "总成交金额", "时间金额明细"
+            "换手", "量比", "总成笔数", "总成交金额", "时间金额明细"
         ]
         self.column_vars = {}
         for col in all_columns:
@@ -950,7 +950,7 @@ class StockVisualizationApp:
         # 创建Treeview时使用自定义样式
         self.tree = ttk.Treeview(self.tree_container, show="headings", style="Custom.Treeview")
 
-        #self.tree = ttk.Treeview(self.tree_container, show="headings")
+        # self.tree = ttk.Treeview(self.tree_container, show="headings")
         self.vsb = ttk.Scrollbar(self.tree_container, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=self.vsb.set)
         self.hsb = ttk.Scrollbar(self.tree_container, orient="horizontal", command=self.tree.xview)
@@ -963,6 +963,7 @@ class StockVisualizationApp:
         self.tree.bind("<Double-1>", self.show_detail)
         self.tree.bind("<Button-3>", self.on_right_click)
         self.context_menu = tk.Menu(self.master, tearoff=0)
+        self.context_menu.add_command(label="大笔买入", command=self.show_big_buy_orders)
         self.context_menu.add_command(label="基本面分析", command=self.show_fundamental)
         self.context_menu.add_command(label="K线图", command=self.show_k_line)
         self.context_menu.add_command(label="AI诊股", command=self.show_ai_diagnose)
@@ -1017,6 +1018,177 @@ class StockVisualizationApp:
         if self.selected_stock["code"]:
             messagebox.showinfo("基本面分析",
                                 f"正在获取 {self.selected_stock['name']}({self.selected_stock['code']}) 的基本面数据...\n\n功能实现中，这里可以展示:\n- 财务指标(PE, PB, ROE等)\n- 公司简介\n- 行业对比\n- 机构评级\n")
+
+    def show_big_buy_orders(self):
+        """显示选中股票的大笔买入明细"""
+        if not self.selected_stock["code"]:
+            messagebox.showwarning("提示", "请先选择一只股票")
+            return
+
+        stock_code = self.selected_stock["code"]
+        stock_name = self.selected_stock["name"]
+        current_date = datetime.now().strftime('%Y%m%d')
+
+        # 创建新窗口
+        detail_window = tk.Toplevel(self.master)
+        detail_window.title(f"大笔买入明细 - {stock_name}({stock_code})")
+        self.center_window(detail_window, 900, 600)
+        detail_window.resizable(True, True)
+
+        # 创建主框架
+        main_frame = ttk.Frame(detail_window)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # 标题标签
+        title_label = ttk.Label(main_frame, text=f"{stock_name}({stock_code}) - 大笔买入明细",
+                                font=('Microsoft YaHei', 14, 'bold'))
+        title_label.pack(pady=(0, 10))
+
+        # 创建表格框架
+        table_frame = ttk.Frame(main_frame)
+        table_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 创建Treeview表格
+        columns = ("时间", "代码", "名称", "板块", "成交量", "成交价", "占成交量比", "成交金额")
+        tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=20)
+
+        # 设置列标题和宽度
+        column_widths = {
+            "时间": 150,
+            "代码": 80,
+            "名称": 100,
+            "板块": 100,
+            "成交量": 100,
+            "成交价": 80,
+            "占成交量比": 100,
+            "成交金额": 120
+        }
+
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=column_widths.get(col, 100), anchor="center")
+
+        # 创建滚动条
+        v_scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
+        h_scrollbar = ttk.Scrollbar(table_frame, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+
+        # 布局
+        tree.grid(row=0, column=0, sticky="nsew")
+        v_scrollbar.grid(row=0, column=1, sticky="ns")
+        h_scrollbar.grid(row=1, column=0, sticky="ew")
+
+        table_frame.grid_rowconfigure(0, weight=1)
+        table_frame.grid_columnconfigure(0, weight=1)
+
+        # 状态标签
+        status_frame = ttk.Frame(main_frame)
+        status_frame.pack(fill=tk.X, pady=(10, 0))
+
+        status_label = ttk.Label(status_frame, text="正在加载数据...")
+        status_label.pack(side=tk.LEFT)
+
+        # 统计标签
+        stats_label = ttk.Label(status_frame, text="", font=('Microsoft YaHei', 9))
+        stats_label.pack(side=tk.RIGHT)
+
+        # 异步加载数据
+        def load_big_buy_data():
+            try:
+                conn = sqlite3.connect('stock_data.db')
+
+                # 查询大笔买入数据
+                query = f"""
+                SELECT 时间,
+                       代码,
+                       名称,
+                       板块,
+                       成交量,
+                       成交价,
+                       占成交量比,
+                       成交金额
+                FROM stock_changes_{current_date}
+                WHERE 代码 = ?
+                ORDER BY 时间 ASC
+                """
+
+                cursor = conn.execute(query, (stock_code,))
+                rows = cursor.fetchall()
+                conn.close()
+
+                # 在主线程中更新UI
+                def update_ui():
+                    if not rows:
+                        status_label.config(text="未找到该股票的大笔买入数据")
+                        return
+
+                    # 插入数据到表格
+                    total_amount = 0
+                    total_volume = 0
+
+                    for row in rows:
+                        # 格式化数据
+                        formatted_row = list(row)
+                        # 格式化时间
+                        if formatted_row[0]:
+                            try:
+                                time_obj = datetime.strptime(str(formatted_row[0]), '%Y-%m-%d %H:%M:%S')
+                                formatted_row[0] = time_obj.strftime('%H:%M:%S')
+                            except:
+                                pass
+
+                        # 格式化数字
+                        try:
+                            # 成交量
+                            if formatted_row[4]:
+                                volume = float(formatted_row[4])
+                                formatted_row[4] = f"{volume:,.0f}"
+                                total_volume += volume
+
+                            # 成交价
+                            if formatted_row[5]:
+                                price = float(formatted_row[5])
+                                formatted_row[5] = f"{price:.2f}"
+
+                            # 占成交量比
+                            if formatted_row[6]:
+                                ratio = float(formatted_row[6])
+                                formatted_row[6] = f"{ratio:.2f}%"
+
+                            # 成交金额
+                            if formatted_row[7]:
+                                amount = float(formatted_row[7])
+                                formatted_row[7] = f"{amount:,.0f}"
+                                total_amount += amount
+                        except:
+                            pass
+
+                        tree.insert("", "end", values=formatted_row)
+
+                    # 更新状态和统计信息
+                    status_label.config(text=f"共找到 {len(rows)} 条大笔买入记录")
+                    stats_text = f"总成交量: {total_volume:,.0f}手  总成交金额: {total_amount / 10000:.1f}万元"
+                    stats_label.config(text=stats_text)
+
+                    logging.info(f"加载 {stock_name}({stock_code}) 大笔买入数据完成，共{len(rows)}条记录")
+
+                # 在主线程中执行UI更新
+                detail_window.after(0, update_ui)
+
+            except Exception as e:
+                logging.error(f"加载大笔买入数据失败: {e}")
+
+                def show_error():
+                    status_label.config(text=f"数据加载失败: {str(e)}")
+
+                detail_window.after(0, show_error)
+
+        # 在后台线程中加载数据
+        threading.Thread(target=load_big_buy_data, daemon=True).start()
+
+        # 添加导出功能按钮
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(10, 0))
 
     def show_k_line(self):
         """显示K线图"""
