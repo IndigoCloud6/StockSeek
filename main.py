@@ -1384,10 +1384,10 @@ class StockVisualizationApp:
                     # 按日期降序排序，最新的在前面
                     fund_flow_df = fund_flow_df.sort_values('日期', ascending=False)
                     # 取最近的10天数据
-                    fund_flow_df = fund_flow_df.head(10)
+                    fund_flow_df = fund_flow_df.head(20)
                 else:
                     # 如果没有日期列，则直接取最后10行（通常最新的数据在后面）
-                    fund_flow_df = fund_flow_df.tail(10).iloc[::-1]  # tail(10)取后10行，然后reverse顺序
+                    fund_flow_df = fund_flow_df.tail(20).iloc[::-1]  # tail(10)取后10行，然后reverse顺序
 
                 # 数据处理和显示
                 status_label.config(text=f"获取到最近 {len(fund_flow_df)} 天的资金流数据")
@@ -1448,13 +1448,14 @@ class StockVisualizationApp:
                 stats_frame.pack(fill=tk.X, pady=(10, 0))
 
                 # 计算统计数据
-                total_main_flow = fund_flow_df['主力净流入-净额'].sum()
-                avg_main_flow = fund_flow_df['主力净流入-净额'].mean()
+                #total_main_flow = fund_flow_df['主力净流入-净额'].sum()
+                #avg_main_flow = fund_flow_df['主力净流入-净额'].mean()
 
                 # 计算最近3天和5天的数据（现在数据已经按最新到最旧排序）
                 recent_3_flow = fund_flow_df.head(3)['主力净流入-净额'].sum() if len(fund_flow_df) >= 3 else fund_flow_df['主力净流入-净额'].sum()
                 recent_5_flow = fund_flow_df.head(5)['主力净流入-净额'].sum() if len(fund_flow_df) >= 5 else fund_flow_df['主力净流入-净额'].sum()
-
+                recent_10_flow = fund_flow_df.head(10)['主力净流入-净额'].sum() if len(fund_flow_df) >= 10 else fund_flow_df['主力净流入-净额'].sum()
+                avg_main_flow = fund_flow_df.head(10)['主力净流入-净额'].mean()
                 # 计算流入流出天数
                 inflow_days = len(fund_flow_df[fund_flow_df['主力净流入-净额'] > 0])
                 outflow_days = len(fund_flow_df[fund_flow_df['主力净流入-净额'] < 0])
@@ -1468,7 +1469,7 @@ class StockVisualizationApp:
                     date_range_text = f"共 {len(fund_flow_df)} 天数据"
 
                 # 将这几行的显示文本修改：
-                stats_text1 = f"10天总主力净流入: {total_main_flow / 10000:.0f}万元  |  " \
+                stats_text1 = f"10天总主力净流入: {recent_10_flow / 10000:.0f}万元  |  " \
                               f"日均主力净流入: {avg_main_flow / 10000:.0f}万元"
 
                 stats_text2 = f"近3天主力净流入: {recent_3_flow / 10000:.0f}万元  |  " \
