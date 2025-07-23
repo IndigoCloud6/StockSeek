@@ -953,9 +953,9 @@ class StockVisualizationApp:
 
         market_cap_frame = ttk.Frame(control_frame)
         market_cap_frame.pack(side=tk.LEFT, padx=5)
-        ttk.Label(market_cap_frame, text="最小总市值(亿):").pack(side=tk.LEFT, padx=5)
-        ttk.Button(market_cap_frame, text="-", width=3, command=lambda: self.adjust_market_cap(-10)).pack(side=tk.LEFT, padx=2)
-        self.market_cap_var = tk.StringVar(value="10")
+        ttk.Label(market_cap_frame, text="最大总市值(亿):").pack(side=tk.LEFT, padx=5)
+        ttk.Button(market_cap_frame, text="-", width=3, command=lambda: self.adjust_market_cap(-20)).pack(side=tk.LEFT, padx=2)
+        self.market_cap_var = tk.StringVar(value="200")
         self.market_cap_label = ttk.Label(market_cap_frame, textvariable=self.market_cap_var, width=6, anchor="center", background="white", relief="sunken",
                                           padding=3)
         self.market_cap_label.pack(side=tk.LEFT, padx=2)
@@ -1585,7 +1585,7 @@ class StockVisualizationApp:
                 stock_changes_{current_date} a,
                 stock_real_data_{current_date} b
             WHERE 
-                a.代码 = b.代码 AND b.总市值 >= {min_market_cap}
+                a.代码 = b.代码 AND b.总市值 <= {min_market_cap}
             GROUP BY 
                 a.代码, a.名称
             HAVING 
