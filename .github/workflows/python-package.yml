@@ -53,12 +53,16 @@ jobs:
         name: StockSeek-${{ matrix.python-version }}.zip
         path: StockSeek-${{ matrix.python-version }}.zip
 
+    - name: Set release date
+      id: set_date
+      run: echo "date=$(Get-Date -Format 'yyyy-MM-dd')" >> $env:GITHUB_ENV
+
     - name: Release (auto-create or update latest)
       uses: softprops/action-gh-release@v2
       if: github.ref == 'refs/heads/main'
       with:
         tag_name: latest
-        name: Latest Build
+        name: Latest Build - ${{ env.date }}
         body: |
           自动发布的最新主分支 Windows 可执行包（含 exe, logo.ico, config.json）
         files: |
