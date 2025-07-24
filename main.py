@@ -963,7 +963,7 @@ class StockVisualizationApp:
 
         ttk.Label(control_frame, text="排序方式:").pack(side=tk.LEFT, padx=5)
         self.sort_var = tk.StringVar(value="总成交金额")
-        sort_options = ["总成交金额", "涨幅", "总成笔数", "换手", "量比"]
+        sort_options = ["总成交金额", "涨幅", "总成笔数", "换手", "总市值", "量比"]
         sort_combo = ttk.Combobox(control_frame, textvariable=self.sort_var, values=sort_options, width=10, state="readonly")
         sort_combo.pack(side=tk.LEFT, padx=5)
         sort_combo.bind("<<ComboboxSelected>>", lambda e: self.load_data())
@@ -1400,7 +1400,8 @@ class StockVisualizationApp:
                 for index, row in fund_flow_df.iterrows():
                     # 格式化数据
                     values = [
-                        str(row['日期'].date()) if pd.notna(row['日期']) and hasattr(row['日期'], 'date') else str(row['日期']) if pd.notna(row['日期']) else "",
+                        str(row['日期'].date()) if pd.notna(row['日期']) and hasattr(row['日期'], 'date') else str(row['日期']) if pd.notna(
+                            row['日期']) else "",
                         f"{row['收盘价']:.2f}" if pd.notna(row['收盘价']) else "0.00",
                         f"{row['涨跌幅']:.2f}" if pd.notna(row['涨跌幅']) else "0.00",
                         f"{row['主力净流入-净额'] / 10000:.0f}" if pd.notna(row['主力净流入-净额']) else "0",
@@ -1448,8 +1449,8 @@ class StockVisualizationApp:
                 stats_frame.pack(fill=tk.X, pady=(10, 0))
 
                 # 计算统计数据
-                #total_main_flow = fund_flow_df['主力净流入-净额'].sum()
-                #avg_main_flow = fund_flow_df['主力净流入-净额'].mean()
+                # total_main_flow = fund_flow_df['主力净流入-净额'].sum()
+                # avg_main_flow = fund_flow_df['主力净流入-净额'].mean()
 
                 # 计算最近3天和5天的数据（现在数据已经按最新到最旧排序）
                 recent_3_flow = fund_flow_df.head(3)['主力净流入-净额'].sum() if len(fund_flow_df) >= 3 else fund_flow_df['主力净流入-净额'].sum()
@@ -1462,8 +1463,10 @@ class StockVisualizationApp:
 
                 # 获取最新和最旧的日期用于显示
                 if '日期' in fund_flow_df.columns and len(fund_flow_df) > 0:
-                    latest_date = fund_flow_df['日期'].max().strftime('%Y-%m-%d') if hasattr(fund_flow_df['日期'].max(), 'strftime') else str(fund_flow_df['日期'].max())
-                    earliest_date = fund_flow_df['日期'].min().strftime('%Y-%m-%d') if hasattr(fund_flow_df['日期'].min(), 'strftime') else str(fund_flow_df['日期'].min())
+                    latest_date = fund_flow_df['日期'].max().strftime('%Y-%m-%d') if hasattr(fund_flow_df['日期'].max(), 'strftime') else str(
+                        fund_flow_df['日期'].max())
+                    earliest_date = fund_flow_df['日期'].min().strftime('%Y-%m-%d') if hasattr(fund_flow_df['日期'].min(), 'strftime') else str(
+                        fund_flow_df['日期'].min())
                     date_range_text = f"数据范围: {earliest_date} 至 {latest_date}"
                 else:
                     date_range_text = f"共 {len(fund_flow_df)} 天数据"
