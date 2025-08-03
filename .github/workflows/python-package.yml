@@ -28,9 +28,10 @@ jobs:
     - name: Create and activate venv, install dependencies
       run: |
         python -m venv .venv
-        .venv\Scripts\python.exe -m pip install --upgrade pip
-        .venv\Scripts\python.exe -m pip install pyinstaller
-        if (Test-Path requirements.txt) { .venv\Scripts\pip.exe install -r requirements.txt }
+        .\.venv\Scripts\Activate.ps1
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        if (Test-Path requirements.txt) { pip install -r requirements.txt }
 
     - name: Build with PyInstaller in .venv
       run: |
