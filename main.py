@@ -1334,6 +1334,7 @@ class StockVisualizationApp:
         self.master = master
         master.title("草船借箭 - 启动中...")
         Utils.center_window(master, *Config.DEFAULT_WINDOW_SIZE)
+        master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         # 初始化管理器
         self.config_manager = ConfigManager()
@@ -1355,6 +1356,16 @@ class StockVisualizationApp:
         # 创建启动UI并延迟初始化主应用
         self.create_startup_ui()
         master.after(100, self.initialize_main_app)
+
+    def on_closing(self):
+        """窗口关闭时强制退出"""
+        try:
+            logging.info("程序正在强制退出...")
+        except:
+            pass
+        finally:
+            import os
+            os._exit(0)  # 强制退出，不执行清理
 
     def create_startup_ui(self):
         """创建启动时的简单UI"""
@@ -2437,7 +2448,14 @@ def main():
     app = StockVisualizationApp(root)
 
     # 启动主循环
-    root.mainloop()
+    try:
+        root.mainloop()
+    except:
+        pass
+    finally:
+        # 确保程序完全退出
+        import os
+        os._exit(0)
 
 
 if __name__ == "__main__":
